@@ -7,6 +7,17 @@
 
 char *argv[] = { "sh", 0 };
 
+void
+print_mod(){
+  #ifdef NONE
+    printf(1,"NONE");
+  #endif
+  #ifdef SCFIFO
+    printf(1,"SCFIFO");
+  #endif
+  printf(1,"\n");
+}
+
 int
 main(void)
 {
@@ -20,7 +31,8 @@ main(void)
   dup(0);  // stderr
 
   for(;;){
-    printf(1, "init: starting sh\n");
+    printf(1, "init: starting sh ");
+    print_mod();
     pid = fork();
     if(pid < 0){
       printf(1, "init: fork failed\n");

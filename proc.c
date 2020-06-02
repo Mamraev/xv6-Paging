@@ -112,10 +112,17 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  p->headPG = -1;
   // Task 1
+  if(p->pid>2){
+    createSwapFile(p);
+
+  }
+
   int i;
   for(i = 0; i < MAX_PSYC_PAGES; i++){
     p->swappedPGs[i].va = (char*)0xffffffff;
+    p->swappedPGs[i].changeCounter = 0;
     p->physicalPGs[i].va = (char*)0xffffffff;
     p->physicalPGs[i].prev = 0;
     p->physicalPGs[i].next = 0;
@@ -154,6 +161,7 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  DEBUG_PRINT("%d",(PHYSTOP >> PGSHIFT));
   // this assignment to p->state lets other cores
   // run this process. the acquire forces the above
   // writes to be visible, and the lock is also needed
@@ -178,6 +186,7 @@ growproc(int n)
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   } else if(n < 0){
+    cprintf("whattt %d",n);
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   }
@@ -224,11 +233,11 @@ fork(void)
 
   pid = np->pid;
 
-  createSwapFile(np); //Task 1.1
+  //createSwapFile(np); //Task 1.1
 
   //if(np->pid>2){
     //createSwapFile(np); //Task 1.1
-    char buf[PGSIZE / 2] = "";
+    /*char buf[PGSIZE / 2] = "";
     int offset = 0;
     int nread = 0;
 
@@ -244,8 +253,33 @@ fork(void)
       for(i = 0; i < MAX_PSYC_PAGES; i++){
         np->swappedPGs[i].va = curproc->swappedPGs[i].va;
       }
-    }
+    }*/
+    //np->pgdir = curproc->pgdir;
   //}
+
+  if(curproc->pid>2){
+    np->headPG = curproc ->headPG;
+    np->nPgsPhysical = curproc->nPgsPhysical;
+    np->nPgsSwap = curproc->nPgsSwap;
+    for(int i = 0; i < MAX_PSYC_PAGES ; i++){
+      np->physicalPGs[i].next = curproc->physicalPGs[i].next;
+      np->physicalPGs[i].prev =  np->physicalPGs[i].prev ;
+      np->physicalPGs[i].va = np->physicalPGs[i].va;
+      np->physicalPGs[i].allocated=0;
+      np->swappedPGs[i] = curproc->swappedPGs[i];
+
+     /* if(curproc->physicalPGs[i].va == curproc->headPG->va){
+        np->headPG = &np->physicalPGs[i];
+      }*/
+    }
+    int maxSZ = (curproc->nPgsSwap)*PGSIZE;
+    for(i=0;i<maxSZ; i+=1024){
+      char buf[1024];
+      readFromSwapFile(curproc,buf,i,1024);
+      writeToSwapFile(np,buf,i,1024);
+    }
+
+  }
 
 
   acquire(&ptable.lock);
@@ -283,6 +317,7 @@ exit(void)
     panic("exit: cant remove swapfile");
   }
 
+
   begin_op();
   iput(curproc->cwd);
   end_op();
@@ -292,7 +327,6 @@ exit(void)
 
   // Parent might be sleeping in wait().
   wakeup1(curproc->parent);
-
   // Pass abandoned children to init.
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->parent == curproc){
@@ -335,6 +369,7 @@ wait(void)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
+        p->pgdir = 0;
         p->state = UNUSED;
         release(&ptable.lock);
         return pid;

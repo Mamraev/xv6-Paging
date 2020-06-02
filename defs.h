@@ -78,6 +78,11 @@ char*           kalloc(void);
 void            kfree(char*);
 void            kinit1(void*, void*);
 void            kinit2(void*, void*);
+void            decrementReferenceCount(uint);
+void            incrementReferenceCount(uint);
+uint            getReferenceCount(uint);
+uint            numFreePages(void);
+void            resetRefCounter(uint);
 
 // kbd.c
 void            kbdintr(void);
@@ -199,6 +204,7 @@ struct procPG*  writePageToSwapFile(char*);
 int             initPhysicalPage(char*);
 struct procPG*  getLastPageSCFIFO(void);
 void            swapPage(uint);
+int             indexInSwapFile(uint);
 
 // swapUtils.c
 void            movePageToHead(struct procPG*);
@@ -209,4 +215,13 @@ void            movePageToHead(struct procPG*);
 #define MAX_PSYC_PAGES 16
 
 
+#define MOD_DEBUG          1
 
+#ifdef MOD_DEBUG
+#define DEBUG_PRINT cprintf("DEBUG: "); cprintf
+#else
+#define DEBUG_PRINT(...)
+#endif
+
+
+                

@@ -11,14 +11,15 @@
 00000000 .debug_loc
 00000000 .debug_ranges
 00000000 ls.c
-00000d9c buf.1049
+00000d9c buf.1051
 00000000 ulib.c
 00000000 printf.c
 00000630 printint
-00000a7c digits.1038
+00000a7c digits.1040
 00000000 umalloc.c
 00000dac freep
 00000db0 base
+00000622 getNumberOfFreePages
 00000330 strcpy
 00000060 fmtname
 000006d0 printf

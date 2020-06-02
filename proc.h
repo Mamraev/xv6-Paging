@@ -39,11 +39,21 @@ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
 
 struct procPG{
   char *va;
+  int refs;
+  int allocated;
   struct procPG *next;
   struct procPG *prev;
 };
 
+struct sharedProcList{
+  struct proc *p;
+  struct sharedProcList *next;
+};
+
 struct swappedPG{
+  struct proc* holder;
+  struct sharedProcList *refList;
+  int changeCounter;
   char *va;
 };
 
@@ -67,7 +77,7 @@ struct proc {
 
   int nPgsPhysical;
   int nPgsSwap;
-  struct procPG *headPG;
+  int headPG;
   struct swappedPG swappedPGs[MAX_PSYC_PAGES];
   struct procPG physicalPGs[MAX_PSYC_PAGES];
 };

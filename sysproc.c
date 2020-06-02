@@ -47,10 +47,13 @@ sys_sbrk(void)
 {
   int addr;
   int n;
-
+  
   if(argint(0, &n) < 0)
     return -1;
   addr = myproc()->sz;
+  if(n<-1000){
+    panic("sbrk small num");
+  }
   if(growproc(n) < 0)
     return -1;
   return addr;
@@ -88,4 +91,9 @@ sys_uptime(void)
   xticks = ticks;
   release(&tickslock);
   return xticks;
+}
+
+int
+sys_getNumberOfFreePages(void){
+  return numFreePages();
 }

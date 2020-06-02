@@ -84,6 +84,7 @@ struct segdesc {
 #define NPTENTRIES      1024    // # PTEs per page table
 #define PGSIZE          4096    // bytes mapped by a page
 
+#define PGSHIFT         12
 #define PTXSHIFT        12      // offset of PTX in a linear address
 #define PDXSHIFT        22      // offset of PDX in a linear address
 
@@ -95,6 +96,7 @@ struct segdesc {
 #define PTE_W           0x002   // Writeable
 #define PTE_U           0x004   // User
 #define PTE_A           0x020   // Accessed / refereced
+#define PTE_COW         0x040   // Accessed / refereced
 #define PTE_PS          0x080   // Page Size
 #define PTE_PG          0x200   // Paged out to secondary storage
 

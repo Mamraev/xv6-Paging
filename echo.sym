@@ -14,10 +14,11 @@
 00000000 ulib.c
 00000000 printf.c
 00000370 printint
-00000778 digits.1038
+00000778 digits.1040
 00000000 umalloc.c
 00000a24 freep
 00000a28 base
+00000362 getNumberOfFreePages
 00000070 strcpy
 00000410 printf
 00000290 memmove

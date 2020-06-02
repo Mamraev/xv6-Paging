@@ -17,9 +17,8 @@ movePageToHead(struct procPG *pg){
     pg->next->prev = pg->prev;
   }
 
-  pg->next = p->headPG;
+  pg->next = &p->physicalPGs[p->headPG];
   pg->prev = 0;
-  p->headPG->prev = pg;
-  p->headPG = pg;
+  p->physicalPGs[p->headPG].prev = pg;
 }
 
