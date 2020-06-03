@@ -71,7 +71,7 @@ main(int argc, char *argv[])
       86:	e8 e5 31 00 00       	call   3270 <bigargtest>
   bsstest();
       8b:	e8 60 31 00 00       	call   31f0 <bsstest>
-  //sbrktest();
+  //  sbrktest();
   validatetest();
       90:	e8 ab 30 00 00       	call   3140 <validatetest>
 

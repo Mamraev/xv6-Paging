@@ -3,6 +3,8 @@
 #include "user.h"
 #define PGSIZE          4096
 
+void  printResult(int);
+
 int
 cowPhysicalTest(){
   int testerPid = fork();
@@ -17,11 +19,9 @@ cowPhysicalTest(){
     }
     int freePages_beforeChild = getNumberOfFreePages();
     sleep(10);
-
     int pid = fork();
     int freePages_beforeReadingFromParent = getNumberOfFreePages();
     sleep(10);
-
     if(pid==0){
       for(i = 0; i < 3; i++){
         if(*lst[i]!=i){
@@ -44,7 +44,6 @@ cowPhysicalTest(){
         return -1;
       }
       sleep(10);
-
       exit();
     }
     wait();
@@ -54,40 +53,31 @@ cowPhysicalTest(){
       printf(1," FAILED");
       return -1;
     }
-
-
     exit();
   }else{
     wait();
     return 0;
   }
-
-
-  
 }
 
 
 int 
-cowSwapFileTest(){
+cowSwapFile_pageSeperationTest(){
   int testerPid = fork();
   if(testerPid==0){
-    printf(1,"cowSwapFileTest :");
+    printf(1,"cowSwapFile_pageSeperationTest :");
     int* lst[20];
     int volatile i;
-    for(i = 0; i < 15; i++){
+    for(i = 0; i < 20; i++){
       lst[i] = (int*)sbrk(PGSIZE);
       *lst[i]=i;
     }
-
     int pid = fork();
-
     if(pid==0){
-      for(i = 0; i < 15; i++){
+      for(i = 0; i < 20; i++){
         //printf(1,"%d ",i);
-
         if(*lst[i]!=i){
           printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
-
           printf(1," FAILED");
           return -1;
         }
@@ -95,9 +85,8 @@ cowSwapFileTest(){
       exit();
     }
     int j;
-    for(j = 0; j < 15; j++){
+    for(j = 0; j < 20; j++){
         //printf(1,"%d ",j);
-
         if(*lst[j]!=j){
           printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
   
@@ -106,9 +95,110 @@ cowSwapFileTest(){
         }
       }
     wait();
-
     //printf(1,"parent exit now\n");
 
+    exit();
+  }else{
+    wait();
+    return 0;
+  }
+}
+
+int 
+cowSwapFile_maxPhyInChildTest(){
+  int testerPid = fork();
+  if(testerPid==0){
+    //printf(1,"1  free pages: %d\n",getNumberOfFreePages());
+    printf(1,"cowSwapFile_maxPhyInChildTest :");
+    int* lst[20];
+    int i;
+    for(i = 0; i < 20; i++){
+      lst[i] = (int*)sbrk(PGSIZE);
+      *lst[i]=i;
+    }
+    int pid = fork();
+    if(pid==0){
+      //printf(1,"2  free pages: %d\n",getNumberOfFreePages());
+      for(i = 0; i < 20; i++){
+
+        //printf(1,"%d ",i);
+        *lst[i]= i + 50;
+      }
+      //printf(1,"3  free pages: %d\n",getNumberOfFreePages());
+      exit();
+    }
+
+    wait();
+    int j;
+    //printf(1,"4  free pages: %d\n",getNumberOfFreePages());
+    for(j = 0; j < 20; j++){
+        //printf(1,"%d ",j);
+        if(*lst[j]!=j){
+          printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
+  
+          printf(1," FAILED");
+          return -1;
+        }
+      }
+      //printf(1,"5  free pages: %d\n",getNumberOfFreePages());
+    //printf(1,"parent exit now\n");
+
+    exit();
+  }else{
+    wait();
+    //printf(1,"6  free pages: %d\n",getNumberOfFreePages());
+
+    return 0;
+  }
+}
+
+int 
+cowSwapFile_killedChiledTest(){
+  int testerPid = fork();
+  if(testerPid==0){
+    printf(1,"cowSwapFile_killedChiledTest :");
+
+    int* lst[20];
+    int volatile i;
+    for(i = 0; i < 20; i++){
+      lst[i] = (int*)sbrk(PGSIZE);
+      *lst[i]=i;
+    }
+
+    int pid = fork();
+    if(pid==0){
+
+      for(i = 0; i < 20; i++){
+        //printf(1,"%d ",i);
+        if(*lst[i]!=i){
+          printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
+          printf(1," FAILED");
+          return -1;
+        }
+      }
+
+      for(i = 0; i < 20; i++){
+        *lst[i] = 66;
+        if(*lst[i]!=66){
+          printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
+          printf(1," FAILED");
+          return -1;
+        }
+      }
+      exit();
+    }
+    
+    wait();
+    int j;
+    for(j = 0; j < 20; j++){
+        //printf(1,"%d ",j);
+        if(*lst[j]!=j){
+          printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
+  
+          printf(1," FAILED");
+          return -1;
+        }
+    }
     exit();
   }else{
     wait();
@@ -144,22 +234,90 @@ PhysicalMemTest(){
 
 int
 SwapFileTest(){
-  printf(1,"SwapFileTest :");
-  int* lst[20];
-  int volatile i;
-  for(i = 0; i < 20; i++){
-    lst[i] = (int*)sbrk(PGSIZE);
-    //printf(1,"making space %d\n",((uint)(lst[i])));
-    *lst[i]=i;
-  }
-  for(i = 0; i < 20; i++){
-    if(*lst[i]!=i){
-      printf(1," FAILED");
-      return -1;
+  int testerPid = fork();
+  if(testerPid==0){
+    printf(1,"SwapFileTest :");
+    int* lst[20];
+    int volatile i;
+    for(i = 0; i < 20; i++){
+      lst[i] = (int*)sbrk(PGSIZE);
+      //printf(1,"making space %d\n",((uint)(lst[i])));
+      *lst[i]=i;
     }
-    //printf(1,"%d ",i);
+    for(i = 0; i < 20; i++){
+      if(*lst[i]!=i){
+        printf(1," FAILED");
+        return -1;
+      }
+      //printf(1,"%d ",i);
+    }
+    exit();
+  }else{
+    wait();
+    return 0;
+  }
+}
+
+int
+memLeakTest(int freeMem){
+  printf(1,"memLeakTest :");
+
+  if(freeMem != getNumberOfFreePages()){
+      printf(1, "FAILED\n");
   }
   return 0;
+}
+
+int
+test(){
+  int testerPid = fork();
+  if(testerPid==0){
+    printf(1,"cowSwapFileTest :");
+    int* lst[15];
+    int volatile i;
+    for(i = 0; i < 15; i++){
+      lst[i] = (int*)sbrk(PGSIZE);
+      *lst[i]=i;
+    }
+
+    int pid = fork();
+
+    if(pid==0){
+      
+      for(i = 0; i < 15; i++){
+        //printf(1,"%d ",i);
+
+        if(*lst[i]!=i){
+          printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
+
+          printf(1," FAILED");
+          return -1;
+        }
+      }
+      //printf(1,"child exit now\n");
+
+      exit();
+    }
+    wait();
+    int j;
+    for(j = 0; j < 15; j++){
+        //printf(1,"%d ",j);
+
+        if(*lst[j]!=j){
+          printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
+  
+          printf(1," FAILED");
+          return -1;
+        }
+      }
+
+    printf(1,"parent exit now\n");
+
+    exit();
+  }else{
+    wait();
+    return 0;
+  }
 }
 
 void
@@ -173,12 +331,20 @@ printResult(int res){
 
 int
 main(int argc, char *argv[]){
-  printResult(cowPhysicalTest());
-  printResult(cowSwapFileTest());
-  //printf(1,"yes2\n");
 
+
+
+
+  int freeMem = getNumberOfFreePages();
+  printResult(cowPhysicalTest());
+  printResult(cowSwapFile_pageSeperationTest());
+  printResult(cowSwapFile_killedChiledTest());
+  printResult(cowSwapFile_maxPhyInChildTest());
+  
   printResult(PhysicalMemTest ());
   printResult(SwapFileTest());
+  printResult(memLeakTest(freeMem));
+
   exit();
 }
 

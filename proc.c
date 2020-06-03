@@ -127,6 +127,7 @@ found:
     p->physicalPGs[i].prev = 0;
     p->physicalPGs[i].next = 0;
   }
+  p->allocatedInPhys = 0;
   p->nPgsSwap = 0;
   p->nPgsPhysical = 0;
   p->headPG = 0;
@@ -186,7 +187,6 @@ growproc(int n)
     if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   } else if(n < 0){
-    cprintf("whattt %d",n);
     if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
       return -1;
   }
@@ -233,40 +233,20 @@ fork(void)
 
   pid = np->pid;
 
-  //createSwapFile(np); //Task 1.1
-
-  //if(np->pid>2){
-    //createSwapFile(np); //Task 1.1
-    /*char buf[PGSIZE / 2] = "";
-    int offset = 0;
-    int nread = 0;
-
-    if(strncmp(curproc->name, "init", 4) != 0 && strncmp(curproc->name, "sh", 2) != 0){ // TODO : remove the n
-      while ((nread = readFromSwapFile(curproc, buf, offset, PGSIZE / 2)) != 0 )
-      {
-        if(writeToSwapFile(np, buf, offset, nread) == -1){
-          panic("fork: writing to childs swap file");
-        }
-        offset += nread;
-      }
-
-      for(i = 0; i < MAX_PSYC_PAGES; i++){
-        np->swappedPGs[i].va = curproc->swappedPGs[i].va;
-      }
-    }*/
-    //np->pgdir = curproc->pgdir;
-  //}
 
   if(curproc->pid>2){
     np->headPG = curproc ->headPG;
     np->nPgsPhysical = curproc->nPgsPhysical;
     np->nPgsSwap = curproc->nPgsSwap;
     for(int i = 0; i < MAX_PSYC_PAGES ; i++){
-      np->physicalPGs[i].next = curproc->physicalPGs[i].next;
+      memmove(&np->physicalPGs[i],&curproc->physicalPGs[i],sizeof(struct procPG));
+      memmove(&np->swappedPGs[i],&curproc->swappedPGs[i],sizeof(struct swappedPG));
+
+     /* np->physicalPGs[i].next = curproc->physicalPGs[i].next;
       np->physicalPGs[i].prev =  np->physicalPGs[i].prev ;
       np->physicalPGs[i].va = np->physicalPGs[i].va;
-      np->physicalPGs[i].allocated=0;
-      np->swappedPGs[i] = curproc->swappedPGs[i];
+      np->physicalPGs[i].age = np->physicalPGs[i].age;
+      np->swappedPGs[i] = curproc->swappedPGs[i];*/
 
      /* if(curproc->physicalPGs[i].va == curproc->headPG->va){
         np->headPG = &np->physicalPGs[i];
@@ -607,4 +587,46 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+//update aging mechanisem of nfua algo each tick form trap.c
+void
+nfuaTickUpdate(){
+  struct proc *p;
+  pte_t *pte,*pde,*pgtab;
+
+  acquire(&ptable.lock);
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid>2)
+      break;
+    if(!((p->state == RUNNING) || (p->state == RUNNING) || (p->state == RUNNING)))
+      break;
+
+    int i;
+    for(i = 0; i < MAX_PSYC_PAGES; i++){
+      if(p->physicalPGs[i].va == (char*)0xffffffff)
+        continue;
+      
+      pde = &p->pgdir[PDX(p->physicalPGs[i].va)];
+      if(*pde & PTE_P){
+        pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+        pte = &pgtab[PTX(p->physicalPGs[i].va)];
+      } else {
+        cprintf("nfuaUpdate: pte is not PTE_P\n");
+        continue;
+      }
+      if(!pte){
+        cprintf("nfuaUpdate : !pte\n");
+        continue;
+      }
+
+      p->physicalPGs[i].age = ((p->physicalPGs[i].age) >> 1); // shift right
+
+      if(*pte & PTE_A){                                       // set MSB if accessed
+        uint newBit = 1 << ((sizeof(uint)*8) - 1);
+        p->physicalPGs[i].age |= newBit;
+      }
+    }
+  }
+  release(&ptable.lock);
 }

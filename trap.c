@@ -36,7 +36,10 @@ idtinit(void)
 void
 trap(struct trapframe *tf)
 {
-  uint addr;
+  #ifndef NONE
+    uint addr;
+  #endif
+
   if(tf->trapno == T_SYSCALL){
     if(myproc()->killed)
       exit();
@@ -51,6 +54,9 @@ trap(struct trapframe *tf)
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
       acquire(&tickslock);
+      #ifdef NFUA
+
+      #endif
       ticks++;
       wakeup(&ticks);
       release(&tickslock);
@@ -80,70 +86,84 @@ trap(struct trapframe *tf)
     break;
 
   case T_PGFLT:
-  // TODO: Chek for illigal addr
-    addr = rcr2();
-    pte_t *vaddr = &myproc()->pgdir[PDX(PGROUNDDOWN(addr))];
-    pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*vaddr));
-    pte_t *pte = &pgtab[PTX(addr)];
-    uint pa = PTE_ADDR(*pte);
+    #ifndef NONE
+    // TODO: Chek for illigal addr
+      addr = rcr2();
+      pte_t *vaddr = &myproc()->pgdir[PDX(PGROUNDDOWN(addr))];
+      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*vaddr));
+      pte_t *pte = &pgtab[PTX(addr)];
+      uint pa = PTE_ADDR(*pte);
 
-    //int inSwapFile = (((uint*)PTE_ADDR(P2V(*vaddr)))[PTX(addr)] & PTE_PG);
-    uint refCount = getReferenceCount(pa);
+      //int inSwapFile = (((uint*)PTE_ADDR(P2V(*vaddr)))[PTX(addr)] & PTE_PG);
+      uint refCount = getReferenceCount(pa);
 
 
 
-    //cprintf("PGFLT: ");
-    if((*pte & PTE_PG ) != 0){
-      //cprintf("OK\n");
-      swapPage(PTE_ADDR(addr));
-      break;
-    }else if(((*pte & PTE_W) == 0) && ((*pte & PTE_U) != 0)){
-      
-      // get the reference count of the current page
-      //uint refCount = getReferenceCount(pa);
-        //cprintf("NOT OK %d\n",refCount);
+      //cprintf("PGFLT: ");
+      if((*pte & PTE_PG ) != 0){
+        //cprintf("OK\n");
+        swapPage(PTE_ADDR(addr));
+        break;
+      }else if(((*pte & PTE_W) == 0) && ((*pte & PTE_U) != 0)){
+        
+        // get the reference count of the current page
+        //uint refCount = getReferenceCount(pa);
+          //cprintf("NOT OK %d\n",refCount);
 
-      char *mem;
+        char *mem;
 
-      // Current process is the first one that tries to write to this page
-      if(refCount > 1) {
-        //DEBUG_PRINT("trap refCount>1");
-        //cprintf("couple of refs\n");
+        // Current process is the first one that tries to write to this page
+        if(refCount > 1) {
+          //DEBUG_PRINT("trap refCount>1");
+          //cprintf("couple of refs\n");
 
-        // allocate a new memory page for the process
-        if((mem = kalloc()) == 0) {
-          cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);
-          myproc()->killed = 1;
-          return;
+          // allocate a new memory page for the process
+          /*          cprintf("aka %d\n",myproc()->allocatedInPhys);
+
+
+          if(myproc()->nPgsPhysical<MAX_PSYC_PAGES){
+            myproc()->nPgsPhysical++;
+          }
+          
+          myproc()->allocatedInPhys++;*/
+          
+
+          if((mem = kalloc()) == 0) {
+            cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);
+            myproc()->killed = 1;
+            return;
+          }
+
+          // copy the contents from the original memory page pointed the virtual address
+          memmove(mem, (char*)P2V(pa), PGSIZE);
+          // point the given page table entry to the new page
+          *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
+
+          // Since the current process now doesn't point to original page,
+          // decrement the reference count by 1
+          decrementReferenceCount(pa);
+          lcr3(V2P(myproc()->pgdir));
         }
-
-        // copy the contents from the original memory page pointed the virtual address
-        memmove(mem, (char*)P2V(pa), PGSIZE);
-        // point the given page table entry to the new page
-        *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
-
-        // Since the current process now doesn't point to original page,
-        // decrement the reference count by 1
-        decrementReferenceCount(pa);
-        lcr3(V2P(myproc()->pgdir));
-      }
-      // Current process is the last one that tries to write to this page
-      // No need to allocate new page as all other process has their copies already
-      else if(refCount == 1){
-        // remove the read-only restriction on the trapping page
-        //cprintf("noder pid: %d\n",myproc()->pid);
-        *pte |= PTE_W;
+        // Current process is the last one that tries to write to this page
+        // No need to allocate new page as all other process has their copies already
+        else if(refCount == 1){
+          // remove the read-only restriction on the trapping page
+          //cprintf("noder pid: %d\n",myproc()->pid);
+          *pte |= PTE_W;
+        }else{
+          cprintf("count: %d\n",refCount);
+          panic("trap PTE_W : recCount<1");
+        }
       }else{
-        cprintf("count: %d\n",refCount);
-        //panic("trap PTE_W : recCount<1");
+        cprintf("pid: %d\n",myproc()->pid);
+        panic("trap: PF fault");
       }
-    }else{
-      cprintf("pid: %d\n",myproc()->pid);
-      panic("trap: PF fault");
-    }
-    lcr3(V2P(myproc()->pgdir));
+      lcr3(V2P(myproc()->pgdir));
 
-    break;
+      break;
+
+    #endif
+
 
 
   //PAGEBREAK: 13
