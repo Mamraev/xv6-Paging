@@ -597,10 +597,10 @@ nfuaTickUpdate(){
 
   acquire(&ptable.lock);
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
-    if(p->pid>2)
-      break;
-    if(!((p->state == RUNNING) || (p->state == RUNNING) || (p->state == RUNNING)))
-      break;
+    if(p->pid<=2)
+      continue;
+    if(!((p->state == RUNNING) || (p->state == RUNNABLE) || (p->state == SLEEPING)))
+      continue;
 
     int i;
     for(i = 0; i < MAX_PSYC_PAGES; i++){
@@ -621,10 +621,13 @@ nfuaTickUpdate(){
       }
 
       p->physicalPGs[i].age = ((p->physicalPGs[i].age) >> 1); // shift right
+      //cprintf("shifted: %x\n",p->physicalPGs[i].age);
 
       if(*pte & PTE_A){                                       // set MSB if accessed
         uint newBit = 1 << ((sizeof(uint)*8) - 1);
         p->physicalPGs[i].age |= newBit;
+        cprintf("age: %x\n",p->physicalPGs[i].age);
+
       }
     }
   }

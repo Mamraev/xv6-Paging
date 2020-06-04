@@ -372,53 +372,53 @@ cowSwapFile_pageSeperationTest(){
     if(pid==0){
      369:	85 c0                	test   %eax,%eax
      36b:	0f 85 87 00 00 00    	jne    3f8 <cowSwapFile_pageSeperationTest+0x108>
-      for(i = 0; i < 20; i++){
-     371:	c7 45 a4 00 00 00 00 	movl   $0x0,-0x5c(%ebp)
+      for(i = 19; i >= 0; i--){
+     371:	c7 45 a4 13 00 00 00 	movl   $0x13,-0x5c(%ebp)
      378:	8b 45 a4             	mov    -0x5c(%ebp),%eax
-     37b:	83 f8 13             	cmp    $0x13,%eax
-     37e:	7e 1d                	jle    39d <cowSwapFile_pageSeperationTest+0xad>
-     380:	e9 a0 00 00 00       	jmp    425 <cowSwapFile_pageSeperationTest+0x135>
-     385:	8d 76 00             	lea    0x0(%esi),%esi
+     37b:	85 c0                	test   %eax,%eax
+     37d:	79 1d                	jns    39c <cowSwapFile_pageSeperationTest+0xac>
+     37f:	e9 a1 00 00 00       	jmp    425 <cowSwapFile_pageSeperationTest+0x135>
+     384:	8d 74 26 00          	lea    0x0(%esi,%eiz,1),%esi
      388:	8b 45 a4             	mov    -0x5c(%ebp),%eax
-     38b:	83 c0 01             	add    $0x1,%eax
+     38b:	83 e8 01             	sub    $0x1,%eax
      38e:	89 45 a4             	mov    %eax,-0x5c(%ebp)
      391:	8b 45 a4             	mov    -0x5c(%ebp),%eax
-     394:	83 f8 13             	cmp    $0x13,%eax
-     397:	0f 8f 88 00 00 00    	jg     425 <cowSwapFile_pageSeperationTest+0x135>
+     394:	85 c0                	test   %eax,%eax
+     396:	0f 88 89 00 00 00    	js     425 <cowSwapFile_pageSeperationTest+0x135>
         if(*lst[i]!=i){
-     39d:	8b 55 a4             	mov    -0x5c(%ebp),%edx
-     3a0:	8b 45 a4             	mov    -0x5c(%ebp),%eax
-     3a3:	8b 54 95 a8          	mov    -0x58(%ebp,%edx,4),%edx
-     3a7:	39 02                	cmp    %eax,(%edx)
-     3a9:	74 dd                	je     388 <cowSwapFile_pageSeperationTest+0x98>
+     39c:	8b 55 a4             	mov    -0x5c(%ebp),%edx
+     39f:	8b 45 a4             	mov    -0x5c(%ebp),%eax
+     3a2:	8b 54 95 a8          	mov    -0x58(%ebp,%edx,4),%edx
+     3a6:	39 02                	cmp    %eax,(%edx)
+     3a8:	74 de                	je     388 <cowSwapFile_pageSeperationTest+0x98>
           printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
-     3ab:	8b 55 a4             	mov    -0x5c(%ebp),%edx
-     3ae:	83 ec 04             	sub    $0x4,%esp
-     3b1:	8b 45 a4             	mov    -0x5c(%ebp),%eax
-     3b4:	8b 54 95 a8          	mov    -0x58(%ebp,%edx,4),%edx
-     3b8:	39 02                	cmp    %eax,(%edx)
-     3ba:	0f 95 c0             	setne  %al
-     3bd:	0f b6 c0             	movzbl %al,%eax
-     3c0:	50                   	push   %eax
-     3c1:	68 db 11 00 00       	push   $0x11db
+     3aa:	8b 55 a4             	mov    -0x5c(%ebp),%edx
+     3ad:	83 ec 04             	sub    $0x4,%esp
+     3b0:	8b 45 a4             	mov    -0x5c(%ebp),%eax
+     3b3:	8b 54 95 a8          	mov    -0x58(%ebp,%edx,4),%edx
+     3b7:	39 02                	cmp    %eax,(%edx)
+     3b9:	0f 95 c0             	setne  %al
+     3bc:	0f b6 c0             	movzbl %al,%eax
+     3bf:	50                   	push   %eax
+     3c0:	68 db 11 00 00       	push   $0x11db
           printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
-     3c6:	6a 01                	push   $0x1
-     3c8:	e8 93 0a 00 00       	call   e60 <printf>
+     3c5:	6a 01                	push   $0x1
+     3c7:	e8 94 0a 00 00       	call   e60 <printf>
           printf(1," FAILED");
-     3cd:	58                   	pop    %eax
-     3ce:	5a                   	pop    %edx
-     3cf:	68 d3 11 00 00       	push   $0x11d3
-     3d4:	6a 01                	push   $0x1
-     3d6:	e8 85 0a 00 00       	call   e60 <printf>
-     3db:	83 c4 10             	add    $0x10,%esp
+     3cc:	58                   	pop    %eax
+     3cd:	5a                   	pop    %edx
+     3ce:	68 d3 11 00 00       	push   $0x11d3
+     3d3:	6a 01                	push   $0x1
+     3d5:	e8 86 0a 00 00       	call   e60 <printf>
+     3da:	83 c4 10             	add    $0x10,%esp
 }
-     3de:	8d 65 f8             	lea    -0x8(%ebp),%esp
-     3e1:	b8 ff ff ff ff       	mov    $0xffffffff,%eax
-     3e6:	5b                   	pop    %ebx
-     3e7:	5e                   	pop    %esi
-     3e8:	5d                   	pop    %ebp
-     3e9:	c3                   	ret    
-     3ea:	8d b6 00 00 00 00    	lea    0x0(%esi),%esi
+     3dd:	8d 65 f8             	lea    -0x8(%ebp),%esp
+     3e0:	b8 ff ff ff ff       	mov    $0xffffffff,%eax
+     3e5:	5b                   	pop    %ebx
+     3e6:	5e                   	pop    %esi
+     3e7:	5d                   	pop    %ebp
+     3e8:	c3                   	ret    
+     3e9:	8d b4 26 00 00 00 00 	lea    0x0(%esi,%eiz,1),%esi
     for(j = 0; j < 20; j++){
      3f0:	83 c3 01             	add    $0x1,%ebx
      3f3:	83 fb 14             	cmp    $0x14,%ebx
@@ -431,7 +431,7 @@ cowSwapFile_pageSeperationTest(){
      400:	83 ec 04             	sub    $0x4,%esp
      403:	6a 01                	push   $0x1
      405:	68 ee 11 00 00       	push   $0x11ee
-     40a:	eb ba                	jmp    3c6 <cowSwapFile_pageSeperationTest+0xd6>
+     40a:	eb b9                	jmp    3c5 <cowSwapFile_pageSeperationTest+0xd5>
      40c:	8d 74 26 00          	lea    0x0(%esi,%eiz,1),%esi
     wait();
      410:	e8 05 09 00 00       	call   d1a <wait>

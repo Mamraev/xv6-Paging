@@ -54,9 +54,9 @@ trap(struct trapframe *tf)
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
       acquire(&tickslock);
-      #ifdef NFUA
-
-      #endif
+     /* #ifdef NFUA
+        nfuaTickUpdate();
+      #endif*/
       ticks++;
       wakeup(&ticks);
       release(&tickslock);
@@ -88,6 +88,11 @@ trap(struct trapframe *tf)
   case T_PGFLT:
     #ifndef NONE
     // TODO: Chek for illigal addr
+    
+      #ifdef NFUA  //there is commented version in tick trap
+        nfuaTickUpdate();
+      #endif
+
       addr = rcr2();
       pte_t *vaddr = &myproc()->pgdir[PDX(PGROUNDDOWN(addr))];
       pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*vaddr));

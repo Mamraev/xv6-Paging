@@ -15,6 +15,9 @@ print_mod(){
   #ifdef SCFIFO
     printf(1,"SCFIFO");
   #endif
+  #ifdef NFUA
+    printf(1,"NFUA");
+  #endif
   printf(1,"\n");
 }
 

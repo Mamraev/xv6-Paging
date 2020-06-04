@@ -74,7 +74,7 @@ cowSwapFile_pageSeperationTest(){
     }
     int pid = fork();
     if(pid==0){
-      for(i = 0; i < 20; i++){
+      for(i = 19; i >= 0; i--){
         //printf(1,"%d ",i);
         if(*lst[i]!=i){
           printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
