@@ -8,6 +8,28 @@
 #include "traps.h"
 #include "spinlock.h"
 
+static pte_t *
+walkpgdir(pde_t *pgdir, const void *va, int alloc)
+{
+  pde_t *pde;
+  pte_t *pgtab;
+
+  pde = &pgdir[PDX(va)];
+  if(*pde & PTE_P){
+    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+  } else {
+    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
+      return 0;
+
+    // Make sure all those PTE_P bits are zero.
+    memset(pgtab, 0, PGSIZE);
+    // The permissions here are overly generous, but they can
+    // be further restricted by the permissions in the page table
+    // entries, if necessary.
+    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
+  }
+  return &pgtab[PTX(va)];
+}
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -54,7 +76,7 @@ trap(struct trapframe *tf)
   case T_IRQ0 + IRQ_TIMER:
     if(cpuid() == 0){
       acquire(&tickslock);
-     /* #ifdef NFUA
+      /*#ifdef NFUA
         nfuaTickUpdate();
       #endif*/
       ticks++;
@@ -92,82 +114,91 @@ trap(struct trapframe *tf)
       #ifdef NFUA  //there is commented version in tick trap
         nfuaTickUpdate();
       #endif
+      /*if(myproc()->pid<=2){
+
+        lapiceoi();
+        break;
+      }*/
 
       addr = rcr2();
-      pte_t *vaddr = &myproc()->pgdir[PDX(PGROUNDDOWN(addr))];
-      pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*vaddr));
-      pte_t *pte = &pgtab[PTX(addr)];
+      //pte_t *vaddr = &myproc()->pgdir[PDX(PGROUNDDOWN(addr))];
+      //pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*vaddr));
+      //pte_t *pte = &pgtab[PTX(addr)];
+      pte_t *pte = walkpgdir(myproc()->pgdir,(char*)addr,0);
       uint pa = PTE_ADDR(*pte);
 
       //int inSwapFile = (((uint*)PTE_ADDR(P2V(*vaddr)))[PTX(addr)] & PTE_PG);
       uint refCount = getReferenceCount(pa);
 
+      /*if((*pte & PTE_U ) == 0){
+        break;
+      }*/
 
 
       //cprintf("PGFLT: ");
-      if((*pte & PTE_PG ) != 0){
-        //cprintf("OK\n");
-        swapPage(PTE_ADDR(addr));
-        break;
-      }else if(((*pte & PTE_W) == 0) && ((*pte & PTE_U) != 0)){
+      if(((*pte & PTE_W) == 0) && ((*pte & PTE_PG) == 0)) {
+        //cprintf("trap: PTE_W\n");
+        if((*pte & PTE_COW) != 0){
+          int k = 0;
+          for(k = 0 ; k < MAX_PSYC_PAGES; k++){
+            if(myproc()->physicalPGs[k].va == (char*)addr){
+              if(myproc()->physicalPGs[k].alloceted == 0){
+                myproc()->allocatedInPhys++;
+              }
+              myproc()->physicalPGs[k].alloceted = 1;
+              //cprintf("allocated2\n");
+              break;
+            }else{
+              //cprintf("%d page was %d, we want %d\n",myproc()->allocatedInPhys,myproc()->physicalPGs[k].va,addr);
+            }
+          }
+
+          char *mem;
+          if(refCount > 1) {
+
+            
+            if((mem = kalloc()) == 0) {
+              cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);
+              myproc()->killed = 1;
+              return;
+            }
+
+            memmove(mem, (char*)P2V(pa), PGSIZE);
+            *pte = V2P(mem) | PTE_P | PTE_W | PTE_FLAGS(*pte);
+
+            lcr3(V2P(myproc()->pgdir));
+            decrementReferenceCount(pa);
+
+          }
+          // Current process is the last one that tries to write to this page
+          // No need to allocate new page as all other process has their copies already
+          else {
+            //myproc()->allocatedInPhys++;
+
+            // remove the read-only restriction on the trapping page
+            //cprintf("noder pid: %d\n",myproc()->pid);
+            *pte |= PTE_W;
+            *pte &= ~PTE_COW;
+            lcr3(V2P(myproc()->pgdir));
+          }
+      }
         
-        // get the reference count of the current page
-        //uint refCount = getReferenceCount(pa);
-          //cprintf("NOT OK %d\n",refCount);
-
-        char *mem;
-
-        // Current process is the first one that tries to write to this page
-        if(refCount > 1) {
-          //DEBUG_PRINT("trap refCount>1");
-          //cprintf("couple of refs\n");
-
-          // allocate a new memory page for the process
-          /*          cprintf("aka %d\n",myproc()->allocatedInPhys);
-
-
-          if(myproc()->nPgsPhysical<MAX_PSYC_PAGES){
-            myproc()->nPgsPhysical++;
-          }
-          
-          myproc()->allocatedInPhys++;*/
-          
-
-          if((mem = kalloc()) == 0) {
-            cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);
-            myproc()->killed = 1;
-            return;
-          }
-
-          // copy the contents from the original memory page pointed the virtual address
-          memmove(mem, (char*)P2V(pa), PGSIZE);
-          // point the given page table entry to the new page
-          *pte = V2P(mem) | PTE_P | PTE_U | PTE_W;
-
-          // Since the current process now doesn't point to original page,
-          // decrement the reference count by 1
-          decrementReferenceCount(pa);
-          lcr3(V2P(myproc()->pgdir));
-        }
-        // Current process is the last one that tries to write to this page
-        // No need to allocate new page as all other process has their copies already
-        else if(refCount == 1){
-          // remove the read-only restriction on the trapping page
-          //cprintf("noder pid: %d\n",myproc()->pid);
-          *pte |= PTE_W;
-        }else{
-          cprintf("count: %d\n",refCount);
-          panic("trap PTE_W : recCount<1");
-        }
       }else{
+        //cprintf("addr: %d\n",addr);
+        swapPage(addr);
+        lcr3(V2P(myproc()->pgdir));
+      }/*else{
         cprintf("pid: %d\n",myproc()->pid);
         panic("trap: PF fault");
-      }
+      }*/
+      
       lcr3(V2P(myproc()->pgdir));
 
-      break;
+
 
     #endif
+
+    break;
 
 
 

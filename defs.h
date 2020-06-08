@@ -207,8 +207,12 @@ struct procPG*  getLastPageSCFIFO(void);
 void            swapPage(uint);
 int             indexInSwapFile(uint);
 
+int leastAgeIndex(void);
+
 // swapUtils.c
 void            movePageToHead(struct procPG*);
+void            movePageToTail(struct procPG*);
+void            freePageFromList(struct procPG*);
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))

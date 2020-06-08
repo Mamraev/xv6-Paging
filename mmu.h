@@ -96,9 +96,9 @@ struct segdesc {
 #define PTE_W           0x002   // Writeable
 #define PTE_U           0x004   // User
 #define PTE_A           0x020   // Accessed / refereced
-#define PTE_COW         0x040   // Accessed / refereced
 #define PTE_PS          0x080   // Page Size
 #define PTE_PG          0x200   // Paged out to secondary storage
+#define PTE_COW         0x800   // Page copy from parent proc
 
 // Address in page table or page directory entry
 #define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF)

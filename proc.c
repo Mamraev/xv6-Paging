@@ -126,6 +126,8 @@ found:
     p->physicalPGs[i].va = (char*)0xffffffff;
     p->physicalPGs[i].prev = 0;
     p->physicalPGs[i].next = 0;
+    p->physicalPGs[i].age = 0;
+    p->physicalPGs[i].alloceted = 0;
   }
   p->allocatedInPhys = 0;
   p->nPgsSwap = 0;
@@ -236,11 +238,16 @@ fork(void)
 
   if(curproc->pid>2){
     np->headPG = curproc ->headPG;
-    np->nPgsPhysical = curproc->nPgsPhysical;
+    //np->nPgsPhysical = curproc->nPgsPhysical;
     np->nPgsSwap = curproc->nPgsSwap;
     for(int i = 0; i < MAX_PSYC_PAGES ; i++){
       memmove(&np->physicalPGs[i],&curproc->physicalPGs[i],sizeof(struct procPG));
       memmove(&np->swappedPGs[i],&curproc->swappedPGs[i],sizeof(struct swappedPG));
+      np->physicalPGs[i].alloceted = 0;
+
+      if(curproc->swappedPGs[i].va != (char*)0xffffffff){
+        np->nPgsPhysical++;
+      }
 
      /* np->physicalPGs[i].next = curproc->physicalPGs[i].next;
       np->physicalPGs[i].prev =  np->physicalPGs[i].prev ;
@@ -252,14 +259,20 @@ fork(void)
         np->headPG = &np->physicalPGs[i];
       }*/
     }
-    int maxSZ = (curproc->nPgsSwap)*PGSIZE;
+    
+    char* newPage = kalloc();
+    for(i = 0; i < (curproc->nPgsSwap)*PGSIZE ; i++){
+      readFromSwapFile(curproc,newPage,i*PGSIZE,PGSIZE);
+      writeToSwapFile(np,newPage,i*PGSIZE,PGSIZE);
+    }
+    /*int maxSZ = MAX_PSYC_PAGES*PGSIZE;
     for(i=0;i<maxSZ; i+=1024){
       char buf[1024];
       readFromSwapFile(curproc,buf,i,1024);
       writeToSwapFile(np,buf,i,1024);
-    }
-
+    }*/
   }
+  
 
 
   acquire(&ptable.lock);
@@ -579,7 +592,7 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d %s %s", p->pid, state, p->name);
+    cprintf("%d allocated: %d   inPhysical: %d         %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, state, p->name);
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
@@ -626,8 +639,6 @@ nfuaTickUpdate(){
       if(*pte & PTE_A){                                       // set MSB if accessed
         uint newBit = 1 << ((sizeof(uint)*8) - 1);
         p->physicalPGs[i].age |= newBit;
-        cprintf("age: %x\n",p->physicalPGs[i].age);
-
       }
     }
   }

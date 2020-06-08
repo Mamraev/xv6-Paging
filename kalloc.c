@@ -9,6 +9,8 @@
 #include "mmu.h"
 #include "spinlock.h"
 
+#define index(page_addr) (page_addr/PGSIZE)
+
 void freerange(void *vstart, void *vend);
 extern char end[]; // first address after kernel loaded from ELF file
                    // defined by the kernel linker script in kernel.ld
@@ -22,7 +24,7 @@ struct {
   int use_lock;
   struct run *freelist;
   uint free_pages; 
-  uint pg_refcount[PHYSTOP >> PGSHIFT];
+  uint pg_refcount[PHYSTOP/PGSIZE];
 } kmem;
 
 // Initialization happens in two phases.
@@ -49,6 +51,7 @@ kinit2(void *vstart, void *vend)
 void
 freerange(void *vstart, void *vend)
 {
+
   char *p;
   p = (char*)PGROUNDUP((uint)vstart);
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE){
@@ -73,10 +76,10 @@ kfree(char *v)
     acquire(&kmem.lock);
   r = (struct run*)v;
 
-  if(kmem.pg_refcount[V2P(v) >> PGSHIFT] > 0){
-    --kmem.pg_refcount[V2P(v) >> PGSHIFT];
+  if(kmem.pg_refcount[index(V2P(v))] > 0){
+    --kmem.pg_refcount[index(V2P(v))];
   }
-  if(kmem.pg_refcount[V2P(v) >> PGSHIFT] == 0){
+  if(kmem.pg_refcount[index(V2P(v))] <= 0){
     // Fill with junk to catch dangling refs.
     memset(v, 1, PGSIZE);
     kmem.free_pages++;
@@ -103,7 +106,7 @@ kalloc(void)
   if(r){
     kmem.freelist = r->next;
     kmem.free_pages--;
-    kmem.pg_refcount[V2P((char*)r) >> PGSHIFT] = 1;
+    kmem.pg_refcount[index(V2P((char*)r))] = 1;
   }
 
   if(kmem.use_lock)
@@ -119,38 +122,52 @@ uint numFreePages(){
 }
 
 void resetRefCounter(uint pa){
-  kmem.pg_refcount[pa >> PGSHIFT] = 1;
+  kmem.pg_refcount[index(pa)] = 1;
 }
 
 void decrementReferenceCount(uint pa)
 {
-  if( pa >= PHYSTOP)
+  // if(pa > PHYSTOP/PGSIZE){
+  //     cprintf("pa: %d, res: %d\n",pa, PHYSTOP/PGSIZE);
+  //   panic("3");
+  // }
+
+  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
     panic("decrementReferenceCount");
 
   acquire(&kmem.lock);
-  --kmem.pg_refcount[pa >> PGSHIFT];
+  --kmem.pg_refcount[index(pa)];
   release(&kmem.lock);
 
 }
 
 void incrementReferenceCount(uint pa)
 {
+  // if(pa > PHYSTOP/PGSIZE){
+  //     cprintf("pa: %d, res: %d\n",pa, PHYSTOP/PGSIZE);
+  //   panic("2");
+  // }
   if(pa < (uint)V2P(end) || pa >= PHYSTOP)
     panic("incrementReferenceCount");
 
   acquire(&kmem.lock);
-  ++kmem.pg_refcount[pa >> PGSHIFT];
+  ++kmem.pg_refcount[index(pa)];
   release(&kmem.lock);
 }
 
 uint getReferenceCount(uint pa)
 {
+  // if(pa > PHYSTOP/PGSIZE){
+  //     cprintf("pa: %d, res: %d\n",pa, PHYSTOP/PGSIZE);
+  //   panic("1");
+  // }
+
   if( pa >= PHYSTOP)
     panic("getReferenceCount");
   uint count;
 
   acquire(&kmem.lock);
-  count = kmem.pg_refcount[pa >> PGSHIFT];
+  count = kmem.pg_refcount[index(pa)];
   release(&kmem.lock);
 
   return count;

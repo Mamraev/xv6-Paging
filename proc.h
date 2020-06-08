@@ -41,6 +41,7 @@ struct procPG{
   char *va;
   int refs;
   uint age;
+  int alloceted;
   struct procPG *next;
   struct procPG *prev;
 };
@@ -51,6 +52,7 @@ struct sharedProcList{
 };
 
 struct swappedPG{
+  int offset;
   struct proc* holder;
   struct sharedProcList *refList;
   int changeCounter;
@@ -75,9 +77,9 @@ struct proc {
   //Swap file. must initiate with create swap file
   struct file *swapFile;      //page file
 
-  int nPgsPhysical;
-  int nPgsSwap;
-  int allocatedInPhys;
+  volatile int nPgsPhysical;
+  volatile int nPgsSwap;
+  volatile int allocatedInPhys;
   int headPG;
   struct swappedPG swappedPGs[MAX_PSYC_PAGES];
   struct procPG physicalPGs[MAX_PSYC_PAGES];

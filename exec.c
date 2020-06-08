@@ -19,6 +19,30 @@ exec(char *path, char **argv)
   pde_t *pgdir, *oldpgdir;
   struct proc *curproc = myproc();
 
+    // TASK 1:
+  #ifndef NONE
+  // cprintf("EXEC!!\n");
+  struct swappedPG swappedPGs[MAX_PSYC_PAGES];
+  struct procPG physicalPGs[MAX_PSYC_PAGES];
+
+  memmove(swappedPGs,curproc->swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
+  memmove(physicalPGs,curproc->physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
+  for(i = 0 ;i < MAX_PSYC_PAGES ; i++){
+    resetRefCounter((uint)curproc->physicalPGs[i].va);
+    curproc->physicalPGs[i].va = (char*)0xffffffff;
+    curproc->physicalPGs[i].next = 0;
+    curproc->physicalPGs[i].prev = 0;
+    curproc->physicalPGs[i].age = 0;
+    curproc->physicalPGs[i].alloceted = 0;
+    curproc->swappedPGs[i].va = (char*)0xffffffff;
+  }
+  /*curproc->nPgsPhysical = 0;
+  curproc->allocatedInPhys = 0;*/
+
+  curproc->nPgsSwap = 0;
+  curproc->headPG = 0;
+  #endif
+
   begin_op();
 
   if((ip = namei(path)) == 0){
@@ -38,19 +62,7 @@ exec(char *path, char **argv)
   if((pgdir = setupkvm()) == 0)
     goto bad;
 
-  // TASK 1:
-  #ifndef NONE
-  // cprintf("EXEC!!\n");
-  for(i = 0 ;i < MAX_PSYC_PAGES ; i++){
-    curproc->physicalPGs[i].va = (char*)0xffffffff;
-    curproc->physicalPGs[i].next = 0;
-    curproc->physicalPGs[i].prev = 0;
-    curproc->swappedPGs[i].va = (char*)0xffffffff;
-  }
-  curproc->nPgsPhysical = 0;
-  curproc->nPgsSwap = 0;
-  curproc->headPG = 0;
-  #endif
+
 
   // Load program into memory.
   sz = 0;
@@ -118,6 +130,8 @@ exec(char *path, char **argv)
   return 0;
 
  bad:
+  memmove(curproc->swappedPGs,swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
+  memmove(curproc->physicalPGs,physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
   if(pgdir)
     freevm(pgdir);
   if(ip){
