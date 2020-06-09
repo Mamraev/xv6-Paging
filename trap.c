@@ -114,6 +114,7 @@ trap(struct trapframe *tf)
       #ifdef NFUA  //there is commented version in tick trap
         nfuaTickUpdate();
       #endif
+      
       /*if(myproc()->pid<=2){
 
         lapiceoi();
@@ -128,34 +129,46 @@ trap(struct trapframe *tf)
       uint pa = PTE_ADDR(*pte);
 
       //int inSwapFile = (((uint*)PTE_ADDR(P2V(*vaddr)))[PTX(addr)] & PTE_PG);
-      uint refCount = getReferenceCount(pa);
+      //cprintf("first %x %x\n",pa,addr);
+      
 
-      /*if((*pte & PTE_U ) == 0){
+      if((*pte & PTE_U ) == 0){
         break;
-      }*/
+      }
 
+      //cprintf("trap!\n");
 
       //cprintf("PGFLT: ");
-      if(((*pte & PTE_W) == 0) && ((*pte & PTE_PG) == 0)) {
-        //cprintf("trap: PTE_W\n");
+      if(*pte & PTE_PG){
+        //cprintf("swapping: %x\n",PGROUNDDOWN(addr));
+        myproc()->nPGFLT++;
+        swapPage(addr);
+        lcr3(V2P(myproc()->pgdir));
+      }
+      else if((*pte & PTE_W) == 0) {
+        //cprintf("trap: %x\n",addr);
         if((*pte & PTE_COW) != 0){
-          int k = 0;
-          for(k = 0 ; k < MAX_PSYC_PAGES; k++){
-            if(myproc()->physicalPGs[k].va == (char*)addr){
-              if(myproc()->physicalPGs[k].alloceted == 0){
-                myproc()->allocatedInPhys++;
-              }
-              myproc()->physicalPGs[k].alloceted = 1;
-              //cprintf("allocated2\n");
-              break;
-            }else{
-              //cprintf("%d page was %d, we want %d\n",myproc()->allocatedInPhys,myproc()->physicalPGs[k].va,addr);
-            }
-          }
-
+          //cprintf("write %x\n",PGROUNDDOWN(addr));
+          uint refCount = getReferenceCount(pa);
           char *mem;
           if(refCount > 1) {
 
+          int k = 0;
+          for(k = 0 ; k <  MAX_PSYC_PAGES; k++){
+            
+            if(myproc()->physicalPGs[k].va == (char*)PGROUNDDOWN(addr)){
+              //cprintf("found\n");
+              /*if(myproc()->physicalPGs[k].alloceted == 0){
+                //cprintf("~~%x\n",(char*)PGROUNDDOWN(addr));
+                myproc()->allocatedInPhys++;
+              }*/
+              myproc()->physicalPGs[k].alloceted = 1;
+              myproc()->physicalPGs[k].age = 0;
+              break;
+            }else{
+              //cprintf("%d page was %x, we want %x\n",myproc()->allocatedInPhys,myproc()->physicalPGs[k].va,addr);
+            }
+          }
             
             if((mem = kalloc()) == 0) {
               cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);
@@ -165,6 +178,7 @@ trap(struct trapframe *tf)
 
             memmove(mem, (char*)P2V(pa), PGSIZE);
             *pte = V2P(mem) | PTE_P | PTE_W | PTE_FLAGS(*pte);
+            *pte &= ~PTE_COW;
 
             lcr3(V2P(myproc()->pgdir));
             decrementReferenceCount(pa);
@@ -183,10 +197,6 @@ trap(struct trapframe *tf)
           }
       }
         
-      }else{
-        //cprintf("addr: %d\n",addr);
-        swapPage(addr);
-        lcr3(V2P(myproc()->pgdir));
       }/*else{
         cprintf("pid: %d\n",myproc()->pid);
         panic("trap: PF fault");

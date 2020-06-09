@@ -94,3 +94,16 @@ int
 sys_getNumberOfFreePages(void){
   return numFreePages();
 }
+
+int
+sys_printProcDump(void){
+  int pid;
+  if(argint(0, &pid) < 0)
+    return -1;
+  if(pid == 0){
+    procdump();
+  }else{
+    singleProcDump(pid);
+  }
+  return 0;
+}

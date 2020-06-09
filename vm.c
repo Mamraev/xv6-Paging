@@ -101,7 +101,7 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
 //   0xfe000000..0: mapped direct (devices such as ioapic)
 //
 // The kernel allocates physical memory for its heap and for user memory
-// between V2P(end) and the end of physical memory (PHYSTOP)
+// betfen V2P(end) and the end of physical memory (PHYSTOP)
 // (directly addressable from end..P2V(PHYSTOP)).
 
 // This table defines the kernel's mappings, which are present in
@@ -243,7 +243,7 @@ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   for(; a < newsz; a += PGSIZE){
 
     #ifndef NONE
-      if(myproc()->allocatedInPhys >= MAX_PSYC_PAGES){
+      if(myproc()->nPgsPhysical >= MAX_PSYC_PAGES){
         if( (pg = writePageToSwapFile((char*)a)) == 0){
           panic("allocuvm: swapOutPage");
         }
@@ -289,7 +289,6 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   pte_t *pte;
   uint a, pa;
   if(newsz >= oldsz){
-    cprintf("\n%d  %d\n",oldsz,newsz);
     return oldsz;
   }
 
@@ -297,6 +296,7 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
   for(; a  < oldsz; a += PGSIZE){
     pte = walkpgdir(pgdir, (char*)a, 0);
     if(!pte)
+      //a += (NPTENTRIES - 1) * PGSIZE;
       a = PGADDR(PDX(a) + 1, 0, 0) - PGSIZE;
     else if((*pte & PTE_P) != 0){
       pa = PTE_ADDR(*pte);
@@ -308,12 +308,10 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
       //if(myproc()->pgdir == pgdir){
 
       //}
-      
-      
-      p->nPgsPhysical--;
-      p->allocatedInPhys--;
+
       char *v = P2V(pa);
       kfree(v);
+
 
       #ifndef NONE
       int i;
@@ -323,8 +321,17 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
             panic("deallocuvm: cant find page1");
           }
           if(myproc()->physicalPGs[i].va == (char*)v){
+            p->nPgsPhysical--;
+            if(myproc()->physicalPGs[i].alloceted){
+              //p->allocatedInPhys--;
+            }
             myproc()->physicalPGs[i].va = (char*) 0xffffffff;
             myproc()->physicalPGs[i].alloceted = 0;
+
+            break;
+          }if(myproc()->swappedPGs[i].va == (char*)v){
+            myproc()->swappedPGs[i].va = (char*) 0xffffffff;
+
             break;
           }
       }
@@ -387,10 +394,14 @@ copyuvm(pde_t *pgdir, uint sz)
       panic("copyuvm: page not present");
     
     #ifndef NONE
-
+    if(myproc()->pid>2){
+    //pa = PTE_ADDR(*pte);
     if(*pte & PTE_PG){
       pte = walkpgdir(d,(void*)i,1);
-      *pte = PTE_U | PTE_W | PTE_PG;
+      *pte= PTE_U | PTE_W | PTE_PG;
+     /* if(mappages(d, (void*)i, PGSIZE, pa, PTE_W | PTE_U | PTE_PG) < 0) {
+        goto bad;
+      }*/
       continue;
     }
     // Task 1
@@ -399,10 +410,24 @@ copyuvm(pde_t *pgdir, uint sz)
   
     pa = PTE_ADDR(*pte);
     flags = PTE_FLAGS(*pte);
+
     if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
       goto bad;
     }
     incrementReferenceCount(pa);
+    }else{
+      char *mem;
+      pa = PTE_ADDR(*pte);
+      flags = PTE_FLAGS(*pte);
+
+      if((mem = kalloc()) == 0)
+        goto bad;
+      memmove(mem, (char*)P2V(pa), PGSIZE);
+      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+      kfree(mem);
+      goto bad;
+      }
+    }
     #endif
 
     #ifdef NONE
@@ -476,173 +501,6 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
 /***************************************************************************************************************************************************************/
 
 
-
-struct procPG*
-scfifoWriteToSwap(uint addr){/******************************************************************************** SCFIFO :  write *********************************/
-  struct proc *p = myproc();
-  //struct procPG *tempPG;
-  pte_t *pte;
-
-  int i;
-  for(i = 0; i <= MAX_PSYC_PAGES; i++){
-    if(i== MAX_PSYC_PAGES){
-      panic(" scfifoWriteToSwap: unable to find slot for swap");
-    }
-    if(p->swappedPGs[i].va == (char*)0xffffffff){
-      break;
-    }
-  }
-
-  if(p->headPG==-1){
-    panic("scfifoWriteToSwap: empty headPG list");
-  }
-
-  struct procPG *lastpg = getLastPageSCFIFO();
- 
-
-  p->swappedPGs[i].va = lastpg->va;
-  //p->swappedPGs[i].creator = p;
-
-  if(writeToSwapFile(p,(char*)PTE_ADDR(lastpg->va),i*PGSIZE, PGSIZE)<=0){
-    panic("scfifoWriteToSwap: writeToSwapFile");
-  }
-
-  pte = walkpgdir(p->pgdir, (void*)lastpg->va ,0);
-  if(!pte){
-    panic("scfifoWrite: !pte");
-  }
-
-
-  //decrementReferenceCount(PTE_ADDR(*pte));
-  kfree((char*)PTE_ADDR(P2V(*pte)));
-  *pte = PTE_W | PTE_U | PTE_PG;
-
-  //sets the empty page to the head of the proc page list
-  lastpg->va = (char*)addr;
-
-
-
-
-  movePageToHead(lastpg);
-
-  lcr3(V2P(p->pgdir));  // switch to process's address space
-
-  return lastpg;
-}
-
-
-void
-scfifoSwap(uint addr){/******************************************************************************** SCFIFO :  swap *****************************************/
-  pte_t *pte1, *pte2;
-  char buf[PGSIZE / 4];
-  struct proc *p = myproc();
-
-  struct procPG *lastpg = getLastPageSCFIFO();
-
-  pte1 = walkpgdir(p->pgdir, (void*)lastpg->va,0);
-
-  int i = indexInSwapFile(addr);
-
-  p->swappedPGs[i].va = lastpg->va;
-  //p->swappedPGs[i].creator = p;
-
-  pte2 = walkpgdir(p->pgdir,(void*)addr, 0);
-  if(!*pte2){
-    panic("scfifoSwap: pte2 empty");
-  } 
-  
-  *pte2 = PTE_ADDR(*pte1) | PTE_U  | PTE_W| PTE_P;
-
-  int j;
-  for (j = 0; j < 4; j++) {
-    int loc = (i * PGSIZE) + ((PGSIZE / 4) * j);
-    int addroffset = ((PGSIZE / 4) * j);
-
-    memset(buf, 0, PGSIZE / 4);
-    if(readFromSwapFile(p, buf, loc, PGSIZE / 4) <= 0){
-      panic("scfifoSwap: read from swapfile");
-    }
-    if(writeToSwapFile(p, (char*)(P2V(PTE_ADDR(*pte1)) + addroffset), loc, PGSIZE / 4)<= 0){
-      panic("scfifoSwap: read from swapfile");
-    }
-    memmove((void*)(PTE_ADDR(addr) + addroffset), (void*)buf, PGSIZE / 4);
-}
-  
-  *pte1 |= PTE_W | PTE_PG;
-  *pte1 &= ~PTE_PG;
-  /*if(p->allocatedInPhys>=MAX_PSYC_PAGES){
-    *pte1 &= ~PTE_W;
-  }*/
-  
-
-  lastpg->va = (char*)PTE_ADDR(addr);
-  movePageToHead(lastpg);
-
-  lcr3(V2P(p->pgdir));
-}
-
-void
-initSCFIFO(char *va){/******************************************************************************* SCFIFO :  init *******************************************/
-  struct proc *p = myproc();
-  int i;
-  char* addrToOverwrite = (char*)0xffffffff;
-  if(p->allocatedInPhys == 16){
-    panic("initSCFIFO");
-  }
-  if(p->nPgsPhysical>=MAX_PSYC_PAGES){
-    
-      myproc()->nPgsPhysical--;
-
-      addrToOverwrite = getLastPageSCFIFO()->va;
-    //p->allocatedInPhys++;
-  }
-  for(i = 0 ; i<= MAX_PSYC_PAGES; i++){
-
-    if(p->physicalPGs[i].va == addrToOverwrite){
-      p->physicalPGs[i].va = va;
-      p->physicalPGs[i].refs = 1;
-
-      if(p->headPG == -1){
-        p->headPG = i;
-        return;
-      }
-      p->headPG = i;
-      movePageToHead(&p->physicalPGs[i]);
-      return;
-    }
-  }
-}
-
-struct procPG*
-getLastPageSCFIFO(){/******************************************************************************** SCFIFO :  getLastPage ***********************************/
-  struct proc *p = myproc();
-
-  //#pragma GCC diagnostic ignored "-Wmaybe-uninitialized";
-  struct procPG *page = &p->physicalPGs[p->headPG];
-  struct procPG *headHolder = &p->physicalPGs[p->headPG];
-
-  if(!page->next){
-    panic("getLastPG: empty headPG list");
-  }
-  int i;
-  for(i = 1; i < p->nPgsPhysical; i++)
-  {
-      page = page->next;
-  }
-  pte_t *pte;
-  struct procPG *tailHolder = &p->physicalPGs[p->headPG];
-  while ((*(pte = walkpgdir(p->pgdir,(void*)page->va,0)) & PTE_A) != 0)
-  {
-    *pte &= ~PTE_A;
-    if(page->va == headHolder->va){
-      page = tailHolder; //in case all pages had PTE_A bit, return the last one as fifo
-      return page;
-    }
-    page = page->prev;
-  }
-  return page;
-}
-
 /***************************************************************************************************************************************************************/
 /******************************************************************************   NFUA     *********************************************************************/
 /***************************************************************************************************************************************************************/
@@ -653,13 +511,18 @@ leastAgeIndex(){
   uint leastAge = __UINT32_MAX__;
   int leastIndex = -1;
   int i;
-  for(i = 0; i < MAX_PSYC_PAGES ; i++){
+
+  for(i = 0; i < p->nPgsPhysical ; i++){
     if(p->physicalPGs[i].age<=leastAge && p->physicalPGs[i].va != (char*)0xffffffff){
+      //cprintf("%d) least: %x age: %d\n",i,(uint)p->physicalPGs[i].va,p->physicalPGs[i].age);
       leastIndex = i;
       leastAge = p->physicalPGs[i].age;
     }
   }
-  if(i == -1){
+
+
+
+  if(leastIndex == -1){
     panic("IndexMaxAgePG : could not find age >= 0");
   }
   return leastIndex;
@@ -673,8 +536,13 @@ nfuaWriteToSwap(uint addr){/****************************************************
   pte_t *pte = walkpgdir(p->pgdir, (void*)leastAgePG->va, 0);
 
   p->nPgsPhysical--;
-  if(leastAgePG->alloceted){
-    p->allocatedInPhys--;
+  if(leastAgePG->alloceted==1){
+    //cprintf("swapping allocated\n");
+    //p->allocatedInPhys--;
+    //cprintf("~addr: %x   pid: %x\n",(uint)leastAgePG->va,myproc()->pid);
+
+  }else{
+    //cprintf("!!addr: %x   pid: %x\n",(uint)leastAgePG->va,myproc()->pid);
   }
 
   int i;
@@ -684,8 +552,10 @@ nfuaWriteToSwap(uint addr){/****************************************************
     }
     if(p->swappedPGs[i].va == (char*)0xffffffff){
       p->swappedPGs[i].offset = i*PGSIZE;
-      p->swappedPGs[i].va = (char*)PTE_ADDR(leastAgePG->va);
+      p->swappedPGs[i].va = (char*)leastAgePG->va;
       break;
+    }else{
+      //cprintf("swapped addr: %d\n",(uint)p->swappedPGs[i].va);
     }
   }
 
@@ -702,9 +572,10 @@ nfuaWriteToSwap(uint addr){/****************************************************
 
 
   //if(p->allocatedInPhys>MAX_PSYC_PAGES){
+    
+  
   //decrementReferenceCount(PTE_ADDR(*pte));
-  kfree((char*)PTE_ADDR(P2V(*pte)));
-
+  kfree((char*)(P2V(PTE_ADDR(*pte))));
 
 
   //}
@@ -726,41 +597,18 @@ nfuaWriteToSwap(uint addr){/****************************************************
 
 void
 nfuaSwap(uint addr){/******************************************************************************** NFUA :  swap *********************************************/
+  //cprintf("swapped %x pid: \n",addr);
   pte_t *pte2;
-
   char* buf;
-
   struct proc *p = myproc();
 
-    
+  int i = indexInSwapFile(addr);
 
-  int i = indexInSwapFile(PTE_ADDR(addr));
-  pte2 = walkpgdir(p->pgdir,(void*)addr, 0);
-
-
-
-          if(p->allocatedInPhys>=MAX_PSYC_PAGES ) {
-            if(getReferenceCount(PTE_ADDR(*pte2)) > 1){
-              char* newVa = kalloc();
-              char* va = (char*)P2V(PTE_ADDR(*pte2));
-
-              memmove((char*)newVa,va, PGSIZE);
-              *pte2 = V2P(newVa) | PTE_FLAGS(*pte2) |PTE_P | PTE_W;
-              lcr3(V2P(myproc()->pgdir));
-              decrementReferenceCount(PTE_ADDR(*pte2));
-            }
-
-            *pte2 &= PTE_COW;
-            *pte2 |= PTE_W;
-            lcr3(V2P(myproc()->pgdir));
-          }
-  writePageToSwapFile((char*)addr);
-
-  // p->nPgsPhysical++;
-  // p->allocatedInPhys++;
+  if(p->nPgsPhysical>=MAX_PSYC_PAGES){
+    writePageToSwapFile((char*)addr);
+  }
 
   pte2 = walkpgdir(p->pgdir,(void*)addr, 0);
-
 
 
   if((buf = kalloc()) == 0){
@@ -774,37 +622,39 @@ nfuaSwap(uint addr){/***********************************************************
   }
 
   pte2 = walkpgdir(p->pgdir,(void*)addr, 0);
-  *pte2 &= ~PTE_P;
-  *pte2 |= PTE_PG;
 
-  mappages(p->pgdir,(char*)PTE_ADDR(addr) , PGSIZE , V2P(buf), PTE_W | PTE_U);
-  //memmove((void*)(PTE_ADDR(*pte2)),buf,PGSIZE);
+
+  mappages(p->pgdir,(char*)PTE_ADDR(PGROUNDDOWN(addr)) , PGSIZE , V2P(buf), PTE_W | PTE_U);
+  //memmove((void*)PTE_ADDR(PGROUNDDOWN(addr)),buf,PGSIZE);
   
-  //p->swappedPGs[i].va = (char*)0xffffffff;
+  p->nPgsSwap--;
+  p->swappedPGs[i].va = (char*)0xffffffff;//
+  
   
   
   
 
-  *pte2 |= PTE_P;
-  //*pte2 &= ~PTE_COW;
+  *pte2 |= PTE_P | PTE_W;
+  *pte2 &= ~PTE_COW;
   *pte2 &= ~PTE_PG;
+
   
   for(i = 0; i <= MAX_PSYC_PAGES; i++){
     if(i==MAX_PSYC_PAGES){
       panic("cannot allocate phy page nfuaSwap");
     }
     if(p->physicalPGs[i].va == (char*)0xffffffff){
-      p->physicalPGs[i].va = (char*)PTE_ADDR(addr);
+      //cprintf("new addr: %x",addr);
+      p->physicalPGs[i].va = (char*)PGROUNDDOWN(addr);
       p->physicalPGs[i].age = 0;
       p->physicalPGs[i].alloceted = 1;
+      //p->allocatedInPhys++;
       break;
     }
   }
+  
 
   p->nPgsPhysical++;
-  if(p->physicalPGs[i].alloceted){
-    p->allocatedInPhys++;
-  }
 
   lcr3(V2P(p->pgdir));
 }
@@ -814,24 +664,16 @@ initNFUA(char *va){/************************************************************
   struct proc *p = myproc();
   int i;
   char* addrToOverwrite = (char*)0xffffffff;
-  if(p->allocatedInPhys == 16){
-    cprintf("initNFUA\n");
-  }
- /* if(p->nPgsPhysical>=MAX_PSYC_PAGES){
-
+  if(p->nPgsPhysical>=MAX_PSYC_PAGES){
+      panic("wtf");
       myproc()->nPgsPhysical--;
-
-      addrToOverwrite = p->physicalPGs[leastAgeIndex()].va;
-    //p->allocatedInPhys++;
-  }*/
+  }
   for(i = 0 ; i<= MAX_PSYC_PAGES; i++){
 
     if(p->physicalPGs[i].va == addrToOverwrite){
       p->physicalPGs[i].va = va;
       p->physicalPGs[i].age = 0;
       p->physicalPGs[i].alloceted = 1;
-      //p->headPG = i;
-      //movePageToHead(&p->physicalPGs[i]);
       return;
     }
   }
@@ -841,13 +683,20 @@ initNFUA(char *va){/************************************************************
 /***************************************************************************************************************************************************************/
 int
 indexInSwapFile(uint addr){
+  
   struct proc *p =myproc();
   int i;
-  for(i = 0 ; i < p->nPgsSwap; i++){
+  for(i = 0 ; i < MAX_PSYC_PAGES; i++){
 
-    if(p->swappedPGs[i].va == (char*)PTE_ADDR(addr)){
+    if(p->swappedPGs[i].va == (char*) PGROUNDDOWN(addr)){
       return i;
+    }else{
+      //cprintf("need: %x as %x\n",(uint)p->swappedPGs[i].va,PGROUNDDOWN(addr));
     }
+  }
+  for(i = 0 ; i < MAX_PSYC_PAGES; i++){
+
+    cprintf("after panic: %x as %x\n",(uint)p->physicalPGs[i].va,PGROUNDDOWN(addr));
   }
   panic("scfifoSwap: could not find page in swap file");
   return -1;
@@ -857,7 +706,7 @@ indexInSwapFile(uint addr){
 // swaps out a page
 struct procPG*
 writePageToSwapFile(char* va){
-  //cprintf("write\n");
+  //cprintf("write %x\n",va);
   struct procPG *retPG = (void*)0;
   #ifdef SCFIFO
     retPG=scfifoWriteToSwap(PGROUNDDOWN((uint)va));
@@ -865,6 +714,7 @@ writePageToSwapFile(char* va){
   #ifdef NFUA
     retPG=nfuaWriteToSwap((uint)va);
   #endif
+  myproc()->nTotalPGout++;
   myproc()->nPgsSwap++;
 
 
@@ -905,9 +755,8 @@ initPhysicalPage(char *va){
   #ifdef NFUA
     initNFUA(va);
   #endif
-
   myproc()->nPgsPhysical++;
-  myproc()->allocatedInPhys++;
+  //myproc()->allocatedInPhys++;
   //cprintf("%d chikd : %d\n",myproc()->pid,myproc()->allocatedInPhys);
 
 

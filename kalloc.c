@@ -55,8 +55,8 @@ freerange(void *vstart, void *vend)
   char *p;
   p = (char*)PGROUNDUP((uint)vstart);
   for(; p + PGSIZE <= (char*)vend; p += PGSIZE){
-  kmem.pg_refcount[V2P(p) >> PGSHIFT] = 0;
-  kfree(p);
+    //kmem.pg_refcount[index(V2P(p))] = 0;
+    kfree(p);
   }
 }
 //PAGEBREAK: 21
@@ -70,7 +70,7 @@ kfree(char *v)
   struct run *r;
 
   if((uint)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
-    panic("kfree");
+    panic("kfree1");
 
   if(kmem.use_lock)
     acquire(&kmem.lock);
@@ -162,7 +162,7 @@ uint getReferenceCount(uint pa)
   //   panic("1");
   // }
 
-  if( pa >= PHYSTOP)
+  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
     panic("getReferenceCount");
   uint count;
 

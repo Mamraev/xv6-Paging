@@ -77,9 +77,12 @@ struct proc {
   //Swap file. must initiate with create swap file
   struct file *swapFile;      //page file
 
-  volatile int nPgsPhysical;
-  volatile int nPgsSwap;
-  volatile int allocatedInPhys;
+  int nPgsPhysical;
+  int nPgsSwap;
+  int nTotalPGout;
+  int nPGFLT;
+
+  int allocatedInPhys;
   int headPG;
   struct swappedPG swappedPGs[MAX_PSYC_PAGES];
   struct procPG physicalPGs[MAX_PSYC_PAGES];

@@ -25,8 +25,8 @@ exec(char *path, char **argv)
   struct swappedPG swappedPGs[MAX_PSYC_PAGES];
   struct procPG physicalPGs[MAX_PSYC_PAGES];
 
-  memmove(swappedPGs,curproc->swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
-  memmove(physicalPGs,curproc->physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
+  //memmove(swappedPGs,curproc->swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
+  //memmove(physicalPGs,curproc->physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
   for(i = 0 ;i < MAX_PSYC_PAGES ; i++){
     resetRefCounter((uint)curproc->physicalPGs[i].va);
     curproc->physicalPGs[i].va = (char*)0xffffffff;

@@ -15,43 +15,50 @@ cowPhysicalTest(){
     //printf(1,"making space %d\n",((uint)(lst[i])));
     *lst[i]=i;
   }
-  
+  int freePages_beforeChild = getNumberOfFreePages();
   //sleep(10);
   int pid = fork();
-  //int freePages_beforeReadingFromParent = getNumberOfFreePages();
+
+  int freePages_beforeReadingFromParent = getNumberOfFreePages();
   sleep(10);
   if(pid==0){
     for(i = 0; i < 3; i++){
       if(*lst[i]!=i){
         printf(1," FAILED");
-        return -1;
+        exit();
+        //return -1;
       }
     }
-    // int freePages_beforeCloning = getNumberOfFreePages();
+    sleep(50);
+    int freePages_beforeCloning = getNumberOfFreePages();
 
-    // if(freePages_beforeReadingFromParent != freePages_beforeCloning){
-    //   printf(1,"Err : num of free pages after reading only has changed");
-    //   printf(1," FAILED");
-    //   return -1;
-    // }
+    if(freePages_beforeReadingFromParent != freePages_beforeCloning){
+      printf(1,"Err : num of free pages after reading only has changed");
+      printf(1," FAILED");
+      exit();
+      //return -1;
+    }
     *lst[1] = 66;
+    sleep(50);
 
-    // if(freePages_beforeCloning != getNumberOfFreePages()+1){
-    //   printf(1,"Err : num of free pages after cloning");
-    //   printf(1," FAILED");
-    //   return -1;
-    // }
+    if(freePages_beforeCloning != getNumberOfFreePages()+1){
+      printf(1,"Err : num of free pages after cloning");
+      printf(1," FAILED");
+      exit();
+      //return -1;
+    }
     sleep(10);
     exit();
   }
   wait();
   //if(*lst[1]);
-  // if(freePages_beforeChild != getNumberOfFreePages()){
-  //   printf(1,"before: %d    after: %d",freePages_beforeChild,getNumberOfFreePages());
-  //   printf(1,"Err : num of free pages after child exit");
-  //   printf(1," FAILED");
-  //   return -1;
-  // }
+  if(freePages_beforeChild != getNumberOfFreePages()){
+    printf(1,"before: %d    after: %d",freePages_beforeChild,getNumberOfFreePages());
+    printf(1,"Err : num of free pages after child exit");
+    printf(1," FAILED");
+    sleep(50000);
+    return -1;
+  }
   return 0;
 }
 
@@ -98,8 +105,9 @@ cowSwapFile_pageSeperationTest(){
 
 int 
 cowSwapFile_maxPhyInChildTest(){
-  //int freePages = getNumberOfFreePages();
-  //printf(1,"1  free pages: %d\n",freePages);
+  //printProcDump(0);
+  int freePages = getNumberOfFreePages();
+  printf(1,"1  free pages: %d\n",freePages);
   printf(1,"cowSwapFile_maxPhyInChildTest :");
   int* lst[20];
   int i;
@@ -108,39 +116,37 @@ cowSwapFile_maxPhyInChildTest(){
     *lst[i]=i;
   }
 
-  // if(freePages != getNumberOfFreePages()+16){
-  //   printf(1," FAILED 1(Free Memory error) %d\n",getNumberOfFreePages());
-  //   //ERROR
-  // }
+  //printProcDump(0);
+  if(freePages != getNumberOfFreePages()+16){
+    printf(1," FAILED 1(Free Memory error) %d\n",getNumberOfFreePages());
+    //ERROR
+  }
   int pid = fork();
-  // if(pid!=0){
-  //   printf(1,"Parent pid: %d    child pid: %d\n",getpid(),pid);
-  // }
   if(pid==0){
 
-    // printf(1,"2  free pages: %d\n",getNumberOfFreePages());
-    // if(freePages != getNumberOfFreePages()+84){
-    // printf(1," FAILED 2(Free Memory error)\n");
-    // //ERROR 
-    // }
+    printf(1,"2  free pages: %d\n",getNumberOfFreePages());
+    if(freePages != getNumberOfFreePages()+84){
+    printf(1," FAILED 2(Free Memory error)\n");
+    //ERROR 
+    }
 
-    for(i = 20; i >= 0; i--){
+    for(i = 0; i < 20; i++){
       
       //printf(1,"%d ",i);
       *lst[i]= i + 50;
     }
-
-    //if(freePages != getNumberOfFreePages()+100){
-    //   printf(1," FAILED 3(Free Memory error)%d\n",getNumberOfFreePages());
-    // //ERROR
-    // }
-    // printf(1,"3  free pages: %d\n",getNumberOfFreePages());
-    // //  sleep(10000);
+    //printProcDump(0);
+    if(freePages != getNumberOfFreePages()+100){
+      printf(1," FAILED 3(Free Memory error)%d\n",getNumberOfFreePages());
+    //ERROR
+    }
+    printf(1,"3  free pages: %d\n",getNumberOfFreePages());
+      //sleep(10000);
     exit();
   }
   wait();
   int j;
-  //printf(1,"4  free pages: %d\n",getNumberOfFreePages());
+  printf(1,"4  free pages: %d\n",getNumberOfFreePages());
   for(j = 0; j < 20; j++){
       //printf(1,"%d ",j);
       if(*lst[j]!=j){
@@ -149,10 +155,11 @@ cowSwapFile_maxPhyInChildTest(){
         return -1;
       }
     }
+    printf(1,"5  free pages: %d\n",getNumberOfFreePages());
 
-    // if(freePages != getNumberOfFreePages()+16){
-    //   printf(1," FAILED 4(Free Memory error)\n");
-    // }
+    if(freePages != getNumberOfFreePages()+16){
+      printf(1," FAILED 4(Free Memory error)\n");
+    }
   return 0;
 }
 
@@ -225,25 +232,21 @@ PhysicalMemTest(){
 
 int
 SwapFileTest(){
-
+  int pid = getpid();
   printf(1,"SwapFileTest :");
   int* lst[20];
-  int volatile i;
+  int i;
   for(i = 0; i < 20; i++){
     lst[i] = (int*)sbrk(PGSIZE);
-    //printf(1,"making space %d\n",((uint)(lst[i])));
     *lst[i]=i;
   }
+  sleep(50);
   for(i = 0; i < 20; i++){
     if(*lst[i]!=i){
-      printf(1," FAILED");
+      printf(1," FAILED %d %d",*lst[i],i);
       return -1;
     }
-
-    //printf(1,"%d ",i);
   }
-  //printf(1,"ready\n");
-  //sleep(80000);
   return 0;
 }
 
@@ -262,11 +265,7 @@ memLeakTest(int freeMem){
 
 void
 makeTest(int (*test)()){
-  //printf(1,"num of free pages!! = %d\n",getNumberOfFreePages());
-
   int testerPid = fork();
-    //printf(1,"num of free pages!! = %d\n",getNumberOfFreePages());
-
   
   if(testerPid==0){
     if(test()==0){
@@ -283,16 +282,17 @@ makeTest(int (*test)()){
 int
 main(int argc, char *argv[]){
   
-  //makeTest(cowSwapFile_maxPhyInChildTest);
-
+//makeTest(cowSwapFile_maxPhyInChildTest);
+//makeTest(cowPhysicalTest);
+//makeTest(SwapFileTest);
 
   int freeMem = getNumberOfFreePages();
   
   //  Cow Tests:
   makeTest(cowPhysicalTest);
-  //makeTest(cowSwapFile_pageSeperationTest);
-  //makeTest(cowSwapFile_killedChiledTest);
-  //makeTest(cowSwapFile_maxPhyInChildTest);
+  makeTest(cowSwapFile_pageSeperationTest);
+  makeTest(cowSwapFile_killedChiledTest);
+  makeTest(cowSwapFile_maxPhyInChildTest);
   
   // General Page Tests:
   makeTest(PhysicalMemTest);

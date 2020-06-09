@@ -129,6 +129,7 @@ found:
     p->physicalPGs[i].age = 0;
     p->physicalPGs[i].alloceted = 0;
   }
+  p->nTotalPGout = 0;
   p->allocatedInPhys = 0;
   p->nPgsSwap = 0;
   p->nPgsPhysical = 0;
@@ -237,17 +238,19 @@ fork(void)
 
 
   if(curproc->pid>2){
-    np->headPG = curproc ->headPG;
+    np->nTotalPGout = 0;
+    np->nPGFLT = 0;
     //np->nPgsPhysical = curproc->nPgsPhysical;
     np->nPgsSwap = curproc->nPgsSwap;
     for(int i = 0; i < MAX_PSYC_PAGES ; i++){
       memmove(&np->physicalPGs[i],&curproc->physicalPGs[i],sizeof(struct procPG));
       memmove(&np->swappedPGs[i],&curproc->swappedPGs[i],sizeof(struct swappedPG));
       np->physicalPGs[i].alloceted = 0;
+      //cprintf("moved addr: %x   pid: %x\n",PTE_ADDR(np->physicalPGs[i].va),curproc->pid);
 
-      if(curproc->swappedPGs[i].va != (char*)0xffffffff){
-        np->nPgsPhysical++;
-      }
+      //cprintf("copy swapped %x\n",curproc->swappedPGs[i].va);
+
+
 
      /* np->physicalPGs[i].next = curproc->physicalPGs[i].next;
       np->physicalPGs[i].prev =  np->physicalPGs[i].prev ;
@@ -258,6 +261,10 @@ fork(void)
      /* if(curproc->physicalPGs[i].va == curproc->headPG->va){
         np->headPG = &np->physicalPGs[i];
       }*/
+      if(curproc->physicalPGs[i].va != (char*)0xffffffff){
+        np->nPgsPhysical++;
+        //cprintf("addr : %d\n",curproc->physicalPGs[i].va);
+      }
     }
     
     char* newPage = kalloc();
@@ -265,12 +272,8 @@ fork(void)
       readFromSwapFile(curproc,newPage,i*PGSIZE,PGSIZE);
       writeToSwapFile(np,newPage,i*PGSIZE,PGSIZE);
     }
-    /*int maxSZ = MAX_PSYC_PAGES*PGSIZE;
-    for(i=0;i<maxSZ; i+=1024){
-      char buf[1024];
-      readFromSwapFile(curproc,buf,i,1024);
-      writeToSwapFile(np,buf,i,1024);
-    }*/
+    kfree(newPage);
+
   }
   
 
@@ -353,6 +356,12 @@ wait(void)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
+        /*int i = 0;
+        for(i = 0 ; i < MAX_PSYC_PAGES ; i++){
+          p->physicalPGs[i].va = (char*)0xffffffff;
+          p->physicalPGs[i].alloceted = 0;
+          p->swappedPGs[i].va = (char*)0xffffffff;
+        }*/
         // Found one.
         pid = p->pid;
         kfree(p->kstack);
@@ -362,7 +371,6 @@ wait(void)
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
-        p->pgdir = 0;
         p->state = UNUSED;
         release(&ptable.lock);
         return pid;
@@ -592,7 +600,9 @@ procdump(void)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d allocated: %d   inPhysical: %d         %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, state, p->name);
+    cprintf("%d allocated: %d   inPhysical: %d   swapped: %d   swappedOut: %d   %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, p->nPgsSwap,p->nTotalPGout, state, p->name);
+
+    //cprintf("%d allocated: %d   inPhysical: %d         %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, state, p->name);
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
@@ -643,4 +653,41 @@ nfuaTickUpdate(){
     }
   }
   release(&ptable.lock);
+}
+
+void
+singleProcDump(int pid)
+{
+  static char *states[] = {
+  [UNUSED]    "unused",
+  [EMBRYO]    "embryo",
+  [SLEEPING]  "sleep ",
+  [RUNNABLE]  "runble",
+  [RUNNING]   "run   ",
+  [ZOMBIE]    "zombie"
+  };
+  int i;
+  struct proc *p;
+  char *state;
+  uint pc[10];
+  
+  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->pid != pid)
+      continue;
+    if(p->state == UNUSED)
+      continue;
+    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+      state = states[p->state];
+    else
+      state = "???";
+    cprintf("%d allocated: %d   inPhysical: %d   swapped: %d   swappedOut: %d   %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, p->nPgsSwap,p->nTotalPGout, state, p->name);
+    if(p->state == SLEEPING){
+      getcallerpcs((uint*)p->context->ebp+2, pc);
+      for(i=0; i<10 && pc[i] != 0; i++)
+        cprintf(" %p", pc[i]);
+    }
+    cprintf("\n");
+    return;
+  }
+  cprintf("Error: ProcDump could not find pid %d\n",pid);
 }
