@@ -8,30 +8,7 @@
 #include "traps.h"
 #include "spinlock.h"
 
-#ifdef NONE
-static pte_t *
-walkpgdir(pde_t *pgdir, const void *va, int alloc)
-{
-  pde_t *pde;
-  pte_t *pgtab;
 
-  pde = &pgdir[PDX(va)];
-  if(*pde & PTE_P){
-    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
-  } else {
-    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
-      return 0;
-
-    // Make sure all those PTE_P bits are zero.
-    memset(pgtab, 0, PGSIZE);
-    // The permissions here are overly generous, but they can
-    // be further restricted by the permissions in the page table
-    // entries, if necessary.
-    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
-  }
-  return &pgtab[PTX(va)];
-}
-#endif
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -122,6 +99,9 @@ trap(struct trapframe *tf)
       #ifdef LAPA
         ageTickUpdate();
       #endif
+      #ifdef QA
+        advQueueTickUpdate();
+      #endif
       
       /*if(myproc()->pid<=2){
 
@@ -130,10 +110,7 @@ trap(struct trapframe *tf)
       }*/
 
       addr = rcr2();
-      //pte_t *vaddr = &myproc()->pgdir[PDX(PGROUNDDOWN(addr))];
-      //pde_t *pgtab = (pte_t*)P2V(PTE_ADDR(*vaddr));
-      //pte_t *pte = &pgtab[PTX(addr)];
-      pte_t *pte = walkpgdir(myproc()->pgdir,(char*)addr,0);
+      pte_t *pte = nonStaticWalkpgdir(myproc()->pgdir,(char*)addr,0);
       uint pa = PTE_ADDR(*pte);
 
       //int inSwapFile = (((uint*)PTE_ADDR(P2V(*vaddr)))[PTX(addr)] & PTE_PG);
@@ -188,31 +165,23 @@ trap(struct trapframe *tf)
             decrementReferenceCount(pa);
 
           }
-          // Current process is the last one that tries to write to this page
-          // No need to allocate new page as all other process has their copies already
           else {
-            //myproc()->allocatedInPhys++;
-
             // remove the read-only restriction on the trapping page
-            //cprintf("noder pid: %d\n",myproc()->pid);
             *pte |= PTE_W;
             *pte &= ~PTE_COW;
             lcr3(V2P(myproc()->pgdir));
           }
       }
         
-      }/*else{
-        cprintf("pid: %d\n",myproc()->pid);
-        panic("trap: PF fault");
-      }*/
-      
-      lcr3(V2P(myproc()->pgdir));
-
-
-
+    }
+    lcr3(V2P(myproc()->pgdir));
+    if(pa < PHYSTOP){
+      break;
+    }
+    
     #endif
 
-    break;
+    
 
 
 

@@ -32,6 +32,30 @@ seginit(void)
   lgdt(c->gdt, sizeof(c->gdt));
 }
 
+#ifndef NONE
+pte_t*
+nonStaticWalkpgdir(pde_t *pgdir, const void *va, int alloc)
+{
+  pde_t *pde;
+  pte_t *pgtab;
+
+  pde = &pgdir[PDX(va)];
+  if(*pde & PTE_P){
+    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
+  } else {
+    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
+      return 0;
+
+    // Make sure all those PTE_P bits are zero.
+    memset(pgtab, 0, PGSIZE);
+    // The permissions here are overly generous, but they can
+    // be further restricted by the permissions in the page table
+    // entries, if necessary.
+    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
+  }
+  return &pgtab[PTX(va)];
+}
+#endif
 // Return the address of the PTE in page table pgdir
 // that corresponds to virtual address va.  If alloc!=0,
 // create any required page table pages.
@@ -505,6 +529,22 @@ scfifoLastPageIndex(){/*********************************************************
   return indexInPhysicalMem((uint)page->va);
 }
 
+int 
+aqLeastAgeIndex(){/****************************************************************************        AQ        *********/
+  struct proc *p = myproc();
+  struct procPG *page = &p->physicalPGs[p->headPG];
+
+  if(!page->next){
+    panic("getLastPG: empty headPG list");
+  }
+  int i;
+  for(i = 1; i < p->nPgsPhysical && (page->next); i++)
+  {
+      page = page->next;
+  }
+  return indexInPhysicalMem((uint)page->va);
+}
+
 int
 nfuaLeastAgeIndex(){/**********************************************************************************      NFUA       *********/
   struct proc *p = myproc();
@@ -570,6 +610,9 @@ pageIndexToWrite(){
   #ifdef LAPA
     return lapaLeastAgeIndex();
   #endif
+  #ifdef AQ
+    return aqLeastAgeIndex();
+  #endif
   panic("no def in pageIndexToWrite");
 }
 
@@ -609,7 +652,7 @@ removePhysicalNode(char* va){
       #ifdef LAPA
         p->physicalPGs[i].age = 0xffffffff;
       #endif
-      #ifdef SCFIFO
+      #if defined(SCFIFO) || defined(AQ)
       if(p->headPG == i){
         p->headPG = indexInPhysicalMem((uint)p->physicalPGs[i].next->va);
         p->physicalPGs[i].next->prev = (void*)0;
@@ -641,7 +684,7 @@ addPhysicalNode(uint addr){
       #ifdef LAPA
         p->physicalPGs[i].age = 0xffffffff;
       #endif
-      #ifdef SCFIFO
+      #if defined(SCFIFO) || defined(AQ)
         if(p->headPG == -1){
           p->physicalPGs[i].prev = 0;
           p->physicalPGs[i].next = 0;
@@ -722,13 +765,12 @@ writePageToSwapFile(){
 
   addSwappedNode(pageToWrite->va);
 
-  #ifdef NFUA
   acquire(&tickslock);
   if(*pte & PTE_A){
     *pte &= ~PTE_A;
   }
   release(&tickslock);
-  #endif
+
 
   int offset = p->swappedPGs[indexInSwapFile((uint)pageToWrite->va)].offset;
 

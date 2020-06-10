@@ -24,6 +24,7 @@ struct {
   int use_lock;
   struct run *freelist;
   uint free_pages; 
+  uint totalFreePGs;
   uint pg_refcount[PHYSTOP/PGSIZE];
 } kmem;
 
@@ -59,6 +60,26 @@ freerange(void *vstart, void *vend)
     kfree(p);
   }
 }
+
+void
+recordTotalFreePages(){
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+  kmem.totalFreePGs =  kmem.free_pages;
+  if(kmem.use_lock)
+    release(&kmem.lock);
+}
+
+int
+getTotalFreePages(){
+  uint result;
+  if(kmem.use_lock)
+    acquire(&kmem.lock);
+  result =  kmem.totalFreePGs;
+  if(kmem.use_lock)
+    release(&kmem.lock);
+  return result;
+}
 //PAGEBREAK: 21
 // Free the page of physical memory pointed at by v,
 // which normally should have been returned by a
@@ -74,8 +95,10 @@ kfree(char *v)
 
   if(kmem.use_lock)
     acquire(&kmem.lock);
+  
   r = (struct run*)v;
 
+  #ifndef NONE
   if(kmem.pg_refcount[index(V2P(v))] > 0){
     --kmem.pg_refcount[index(V2P(v))];
   }
@@ -86,6 +109,15 @@ kfree(char *v)
     r->next = kmem.freelist;
     kmem.freelist = r;
   }
+  #endif
+  
+  #ifdef NONE
+  memset(v, 1, PGSIZE);
+  
+  r->next = kmem.freelist;
+  kmem.freelist = r;
+
+  #endif
 
   if(kmem.use_lock)
     release(&kmem.lock);
@@ -105,8 +137,10 @@ kalloc(void)
   r = kmem.freelist;
   if(r){
     kmem.freelist = r->next;
+    #ifndef NONE
     kmem.free_pages--;
     kmem.pg_refcount[index(V2P((char*)r))] = 1;
+    #endif
   }
 
   if(kmem.use_lock)
@@ -158,7 +192,7 @@ void incrementReferenceCount(uint pa)
 void setReferenceCount(uint pa,int n)
 {
 
-  if( pa >= PHYSTOP)
+  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
     panic("setReferenceCount");
 
   acquire(&kmem.lock);

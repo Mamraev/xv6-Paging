@@ -71,7 +71,7 @@ main(int argc, char *argv[])
       86:	e8 e5 31 00 00       	call   3270 <bigargtest>
   bsstest();
       8b:	e8 60 31 00 00       	call   31f0 <bsstest>
-  //  sbrktest();
+  //sbrktest();
   validatetest();
       90:	e8 ab 30 00 00       	call   3140 <validatetest>
 
@@ -91,46 +91,47 @@ main(int argc, char *argv[])
   iputtest();
       b3:	e8 58 00 00 00       	call   110 <iputtest>
 
-  mem();
-      b8:	e8 b3 0c 00 00       	call   d70 <mem>
+  //mem();
   pipe1();
-      bd:	e8 3e 09 00 00       	call   a00 <pipe1>
+      b8:	e8 43 09 00 00       	call   a00 <pipe1>
   preempt();
-      c2:	e8 d9 0a 00 00       	call   ba0 <preempt>
+      bd:	e8 de 0a 00 00       	call   ba0 <preempt>
   exitwait();
-      c7:	e8 14 0c 00 00       	call   ce0 <exitwait>
+      c2:	e8 19 0c 00 00       	call   ce0 <exitwait>
 
   rmdot();
-      cc:	e8 ff 26 00 00       	call   27d0 <rmdot>
+      c7:	e8 04 27 00 00       	call   27d0 <rmdot>
   fourteen();
-      d1:	e8 ba 25 00 00       	call   2690 <fourteen>
+      cc:	e8 bf 25 00 00       	call   2690 <fourteen>
   bigfile();
-      d6:	e8 e5 23 00 00       	call   24c0 <bigfile>
+      d1:	e8 ea 23 00 00       	call   24c0 <bigfile>
   subdir();
-      db:	e8 20 1c 00 00       	call   1d00 <subdir>
+      d6:	e8 25 1c 00 00       	call   1d00 <subdir>
   linktest();
-      e0:	e8 cb 14 00 00       	call   15b0 <linktest>
+      db:	e8 d0 14 00 00       	call   15b0 <linktest>
   unlinkread();
-      e5:	e8 36 13 00 00       	call   1420 <unlinkread>
+      e0:	e8 3b 13 00 00       	call   1420 <unlinkread>
   dirfile();
-      ea:	e8 61 28 00 00       	call   2950 <dirfile>
+      e5:	e8 66 28 00 00       	call   2950 <dirfile>
   iref();
-      ef:	e8 5c 2a 00 00       	call   2b50 <iref>
+      ea:	e8 61 2a 00 00       	call   2b50 <iref>
   forktest();
-      f4:	e8 77 2b 00 00       	call   2c70 <forktest>
+      ef:	e8 7c 2b 00 00       	call   2c70 <forktest>
   bigdir(); // slow
-      f9:	e8 d2 1a 00 00       	call   1bd0 <bigdir>
+      f4:	e8 d7 1a 00 00       	call   1bd0 <bigdir>
 
   uio();
-      fe:	e8 3d 34 00 00       	call   3540 <uio>
+      f9:	e8 42 34 00 00       	call   3540 <uio>
 
   exectest();
-     103:	e8 a8 08 00 00       	call   9b0 <exectest>
+      fe:	e8 ad 08 00 00       	call   9b0 <exectest>
 
   exit();
-     108:	e8 85 37 00 00       	call   3892 <exit>
-     10d:	66 90                	xchg   %ax,%ax
-     10f:	90                   	nop
+     103:	e8 8a 37 00 00       	call   3892 <exit>
+     108:	66 90                	xchg   %ax,%ax
+     10a:	66 90                	xchg   %ax,%ax
+     10c:	66 90                	xchg   %ax,%ax
+     10e:	66 90                	xchg   %ax,%ax
 
 00000110 <iputtest>:
 {

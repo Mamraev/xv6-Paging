@@ -84,6 +84,8 @@ uint            getReferenceCount(uint);
 uint            numFreePages(void);
 void            resetRefCounter(uint);
 void            setReferenceCount(uint pa,int n);
+void            recordTotalFreePages(void);
+int             getTotalFreePages(void);
 
 // kbd.c
 void            kbdintr(void);
@@ -137,6 +139,7 @@ int             wait(void);
 void            wakeup(void*);
 void            yield(void);
 void            ageTickUpdate(void);
+void            advQueueTickUpdate(void);
 void            singleProcDump(int);
 
 // swtch.S
@@ -210,6 +213,7 @@ void            swapPage(uint);
 int             indexInSwapFile(uint);
 int             indexInPhysicalMem(uint);
 void            clearSwapPage(int);
+pte_t*         nonStaticWalkpgdir(pde_t* , const void*, int);
 
 void            addPhysicalNode(uint);
 void            removePhysicalNode(char*);
@@ -230,6 +234,10 @@ void            freePageFromList(struct procPG*);*/
 
 
 #define MOD_DEBUG          1
+
+#define TRUE               1
+#define FALSE              0
+
 
 #ifdef MOD_DEBUG
 #define DEBUG_PRINT cprintf("DEBUG: "); cprintf

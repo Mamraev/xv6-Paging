@@ -24,15 +24,9 @@ exec(char *path, char **argv)
   // cprintf("EXEC!!\n");
   struct swappedPG swappedPGs[MAX_PSYC_PAGES];
   struct procPG physicalPGs[MAX_PSYC_PAGES];
-  //int buRefs[MAX_PSYC_PAGES];
 
-  
-  //memmove(swappedPGs,curproc->swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
-  //memmove(physicalPGs,curproc->physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
   for(i = 0 ;i < MAX_PSYC_PAGES ; i++){
-    // if(curproc->physicalPGs[i].va!=EMPTY_VA){
-    //   buRefs[i] = getReferenceCount((uint)curproc->physicalPGs[i].va);
-    // }
+
     resetRefCounter((uint)curproc->physicalPGs[i].va);
     physicalPGs[i].next = curproc->physicalPGs[i].next;
     physicalPGs[i].prev =  curproc->physicalPGs[i].prev ;

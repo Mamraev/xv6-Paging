@@ -112,6 +112,7 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  #ifndef NONE
   p->headPG = -1;
   // Task 1
   if(p->pid>2){
@@ -136,6 +137,7 @@ found:
   p->allocatedInPhys = 0;
   p->nPgsSwap = 0;
   p->nPgsPhysical = 0;
+  #endif
 
   return p;
 }
@@ -145,6 +147,10 @@ found:
 void
 userinit(void)
 {
+  #ifndef NONE
+  recordTotalFreePages();
+  #endif
+
   struct proc *p;
   extern char _binary_initcode_start[], _binary_initcode_size[];
 
@@ -238,20 +244,14 @@ fork(void)
 
   pid = np->pid;
 
-
+  #ifndef NONE
   if(curproc->pid>2){
     np->nTotalPGout = 0;
     np->nPGFLT = 0;
-    //np->nPgsPhysical = curproc->nPgsPhysical;
     np->nPgsSwap = curproc->nPgsSwap;
     np->headPG = curproc->headPG;
     for(int i = 0; i < MAX_PSYC_PAGES ; i++){
-     //memmove(&np->physicalPGs[i],&curproc->physicalPGs[i],sizeof(struct procPG));
-      //memmove(&np->swappedPGs[i],&curproc->swappedPGs[i],sizeof(struct swappedPG));
       np->physicalPGs[i].alloceted = 0;
-      //cprintf("moved addr: %x   pid: %x\n",PTE_ADDR(np->physicalPGs[i].va),curproc->pid);
-
-      //cprintf("copy swapped %x\n",curproc->swappedPGs[i].va);
       np->physicalPGs[i].next = 0;
       np->physicalPGs[i].prev =  0 ;
       np->physicalPGs[i].va = curproc->physicalPGs[i].va;
@@ -259,16 +259,13 @@ fork(void)
       np->physicalPGs[i].alloceted = curproc->physicalPGs[i].alloceted;
       np->swappedPGs[i] = curproc->swappedPGs[i];
 
-     /* if(curproc->physicalPGs[i].va == curproc->headPG->va){
-        np->headPG = &np->physicalPGs[i];
-      }*/
+
       if(curproc->physicalPGs[i].va != (char*)0xffffffff){
         np->nPgsPhysical++;
-        //cprintf("addr : %d\n",curproc->physicalPGs[i].va);
       }
     }
     
-    #ifdef SCFIFO
+    #if defined(SCFIFO) || defined(AQ)
     for(int i = 0; i < MAX_PSYC_PAGES; i++){
       if(curproc->physicalPGs[i].va != (char*)0xffffffff){
         int next = indexInPhysicalMem((uint)curproc->physicalPGs[i].next->va);
@@ -278,7 +275,6 @@ fork(void)
           int prev = indexInPhysicalMem((uint)curproc->physicalPGs[i].prev->va);
           np->physicalPGs[i].prev = &np->physicalPGs[prev];
         }
-        //cprintf("addr : %d\n",curproc->physicalPGs[i].va);
       }
     }
     #endif
@@ -292,7 +288,7 @@ fork(void)
     kfree(newPage);
 
   }
-  
+  #endif
 
 
   acquire(&ptable.lock);
@@ -325,11 +321,15 @@ exit(void)
     }
   }
 
+  #if VERBOSE_PRINT==TRUE
+    singleProcDump(curproc->pid);
+  #endif
   // Task 1
+  #ifndef NONE
   if(removeSwapFile(curproc) != 0){
     panic("exit: cant remove swapfile");
   }
-
+  #endif
 
   begin_op();
   iput(curproc->cwd);
@@ -375,6 +375,7 @@ wait(void)
       if(p->state == ZOMBIE){
 
         // Found one.
+        #ifndef NONE
         int i;
         for(i = 0; i < MAX_PSYC_PAGES; i++){
               p->swappedPGs[i].va = (char*)0xffffffff;
@@ -388,6 +389,7 @@ wait(void)
               #endif
               p->physicalPGs[i].alloceted = 0;
         }
+        #endif
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;
@@ -621,13 +623,16 @@ procdump(void)
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
     if(p->state == UNUSED)
       continue;
+    
     if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d allocated: %d   inPhysical: %d   swapped: %d   swappedOut: %d   %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, p->nPgsSwap,p->nTotalPGout, state, p->name);
-
-    //cprintf("%d allocated: %d   inPhysical: %d         %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, state, p->name);
+    #ifndef NONE
+    cprintf("%d %s %d %d %d %d %s", p->pid, state, p->nPgsPhysical + p->nPgsSwap, p->nPgsSwap, p->nPGFLT, p->nTotalPGout, p->name);
+    #else
+    cprintf("%d %s %s", p->pid, state, p->name);
+    #endif
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
@@ -635,6 +640,9 @@ procdump(void)
     }
     cprintf("\n");
   }
+  #ifndef NONE
+    cprintf("%d / %d\n",numFreePages() ,getTotalFreePages());
+  #endif
 }
 
 //update aging mechanisem of nfua algo each tick form trap.c
@@ -679,6 +687,49 @@ ageTickUpdate(){
 }
 
 void
+advQueueTickUpdate(){
+  struct proc *p = myproc();
+  struct procPG *prevPG,*page = &p->physicalPGs[p->headPG];
+  char* headVa = page->va;
+
+  if(!page->next){
+    panic("getLastPG: empty headPG list");
+  }
+  int i;
+  for(i = 1; i < p->nPgsPhysical && (page->next); i++)
+  {
+      page->next->prev = page;
+      page = page->next;
+  }
+
+  p->physicalPGs[p->headPG].prev = page;
+
+  pte_t *pte1, *pte2;
+  for(;i > 1; i--){
+    pte1 = nonStaticWalkpgdir(p->pgdir,(void*)page->va,0);
+    prevPG = page->prev;
+    if(*pte1 & PTE_A){
+      pte2 = nonStaticWalkpgdir(p->pgdir,(void*)prevPG->va,0);
+      if((*pte2 & PTE_A)==0){
+        if(prevPG->va != headVa){
+          prevPG->prev->next = page;
+          page->prev = prevPG->prev;
+        }
+        
+        if(i!=p->nPgsPhysical){
+          prevPG->next = page->next;// only need next becouse of the reverse initialization when traversing the queue
+        }
+        
+        page->next = prevPG;
+        prevPG ->prev = page;
+        page = prevPG->prev;
+        i--;
+      }
+    }
+    page = prevPG;
+  }
+}
+void
 singleProcDump(int pid)
 {
   static char *states[] = {
@@ -703,14 +754,20 @@ singleProcDump(int pid)
       state = states[p->state];
     else
       state = "???";
-    cprintf("%d allocated: %d   inPhysical: %d   swapped: %d   swappedOut: %d   %s %s", p->pid, p->allocatedInPhys, p->nPgsPhysical, p->nPgsSwap,p->nTotalPGout, state, p->name);
+    #ifndef NONE
+    cprintf("%d %s %d %d %d %d %s", p->pid, state, p->nPgsPhysical + p->nPgsSwap, p->nPgsSwap, p->nPGFLT, p->nTotalPGout, p->name);
+    #else
+    cprintf("%d %s %s", p->pid, state, p->name);
+    #endif
     if(p->state == SLEEPING){
       getcallerpcs((uint*)p->context->ebp+2, pc);
       for(i=0; i<10 && pc[i] != 0; i++)
         cprintf(" %p", pc[i]);
     }
     cprintf("\n");
-    return;
+    break;
   }
-  cprintf("Error: ProcDump could not find pid %d\n",pid);
+  #ifndef NONE
+    cprintf("%d / %d\n",numFreePages() ,getTotalFreePages());
+  #endif
 }

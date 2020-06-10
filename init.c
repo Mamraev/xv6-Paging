@@ -9,7 +9,7 @@ char *argv[] = { "sh", 0 };
 
 void
 print_mod(){
-  #ifdef NONE
+  /*#ifdef NONE
     printf(1,"NONE");
   #endif
   #ifdef SCFIFO
@@ -21,6 +21,9 @@ print_mod(){
   #ifdef LAPA
     printf(1,"LAPA");
   #endif
+  #ifdef AQ
+    printf(1,"AQ");
+  #endif*/
   printf(1,"\n");
 }
 
