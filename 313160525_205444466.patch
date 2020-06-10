@@ -1,0 +1,2146 @@
+diff --git a/.vscode/settings.json b/.vscode/settings.json
+new file mode 100644
+index 0000000..06b0842
+--- /dev/null
++++ b/.vscode/settings.json
+@@ -0,0 +1,3 @@
++{
++    "C_Cpp.dimInactiveRegions": false
++}
+\ No newline at end of file
+diff --git a/Makefile b/Makefile
+index 09d790c..766fe14 100644
+--- a/Makefile
++++ b/Makefile
+@@ -27,6 +27,7 @@ OBJS = \
+ 	uart.o\
+ 	vectors.o\
+ 	vm.o\
++	swapUtils.o\
+ 
+ # Cross-compiling (e.g., on Mac OS X)
+ # TOOLPREFIX = i386-jos-elf
+@@ -71,12 +72,21 @@ QEMU = $(shell if which qemu > /dev/null; \
+ 	echo "***" 1>&2; exit 1)
+ endif
+ 
++ifndef SELECTION
++	SELECTION = SCFIFO
++endif
++
++ifndef VERBOSE_PRINT
++	VERBOSE_PRINT := FALSE
++endif
++
+ CC = $(TOOLPREFIX)gcc
+ AS = $(TOOLPREFIX)gas
+ LD = $(TOOLPREFIX)ld
+ OBJCOPY = $(TOOLPREFIX)objcopy
+ OBJDUMP = $(TOOLPREFIX)objdump
+-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
++CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer 
++CFLAGS += -D$(SELECTION) -D VERBOSE_PRINT=$(VERBOSE_PRINT)
+ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
+ # FreeBSD ld wants ``elf_i386_fbsd''
+@@ -168,6 +178,7 @@ mkfs: mkfs.c fs.h
+ UPROGS=\
+ 	_cat\
+ 	_echo\
++	_ass3Tests\
+ 	_forktest\
+ 	_grep\
+ 	_init\
+@@ -248,7 +259,7 @@ qemu-nox-gdb: fs.img xv6.img .gdbinit
+ # check in that version.
+ 
+ EXTRA=\
+-	mkfs.c ulib.c user.h cat.c echo.c forktest.c grep.c kill.c\
++	mkfs.c ulib.c user.h cat.c echo.c ass3Tests.c forktest.c grep.c kill.c\
+ 	ln.c ls.c mkdir.c rm.c stressfs.c usertests.c wc.c zombie.c\
+ 	printf.c umalloc.c\
+ 	README dot-bochsrc *.pl toc.* runoff runoff1 runoff.list\
+diff --git a/ass3Tests.c b/ass3Tests.c
+new file mode 100644
+index 0000000..695db02
+--- /dev/null
++++ b/ass3Tests.c
+@@ -0,0 +1,268 @@
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++#define PGSIZE          4096
++
++void  printResult(int);
++
++int
++cowPhysicalTest(){
++  printf(1,"cowPhysicalTest :");
++  int* lst[3];
++  int volatile i;
++  for(i = 0; i < 3; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    *lst[i]=i;
++  }
++  int freePages_beforeChild = getNumberOfFreePages();
++  int pid = fork();
++
++  int freePages_beforeReadingFromParent = getNumberOfFreePages();
++  sleep(10);
++  if(pid==0){
++    for(i = 0; i < 3; i++){
++      if(*lst[i]!=i){
++        printf(1," FAILED");
++        exit();
++      }
++    }
++    sleep(50);
++    int freePages_beforeCloning = getNumberOfFreePages();
++
++    if(freePages_beforeReadingFromParent != freePages_beforeCloning){
++      printf(1,"Err : num of free pages after reading only has changed");
++      printf(1," FAILED");
++      exit();
++    }
++    *lst[1] = 66;
++    sleep(50);
++
++    if(freePages_beforeCloning != getNumberOfFreePages()+1){
++      printf(1,"Err : num of free pages after cloning");
++      printf(1," FAILED");
++      exit();
++    }
++    sleep(10);
++    exit();
++  }
++  wait();
++  if(freePages_beforeChild != getNumberOfFreePages()){
++    printf(1,"before: %d    after: %d",freePages_beforeChild,getNumberOfFreePages());
++    printf(1,"Err : num of free pages after child exit");
++    printf(1," FAILED");
++    sleep(50000);
++    return -1;
++  }
++  return 0;
++}
++
++
++int 
++cowSwapFile_pageSeperationTest(){
++  printf(1,"cowSwapFile_pageSeperationTest :");
++  int* lst[20];
++  int volatile i;
++  for(i = 0; i < 20; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    *lst[i]=i;
++  }
++  int pid = fork();
++  if(pid==0){
++    for(i = 0; i < 20; i++){
++      if(*lst[i]!=i){
++        printf(1,"\nchild fail %d %d\n",*lst[i], i);
++        printf(1," FAILED");
++      }
++    }
++    exit();
++  }
++  int j;
++  for(j = 0; j < 20; j++){
++      if(*lst[j]!=j){
++        printf(1,"\nparent fail %d %d\n",*lst[j], j);
++
++        printf(1," FAILED");
++        return -1;
++      } 
++    }
++  wait();
++  return 0;
++}
++
++int 
++cowSwapFile_maxPhyInChildTest(){
++  int freePages = getNumberOfFreePages();
++  printf(1,"cowSwapFile_maxPhyInChildTest :");
++  int* lst[20];
++  int i;
++  for(i = 0; i < 20; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    *lst[i]=i;
++  }
++
++  int freePagesAfterSBRK = getNumberOfFreePages();
++  if(freePages > getNumberOfFreePages()+16){
++    printf(1," FAILED 1(Free Memory error) %d\n",getNumberOfFreePages());
++    exit();
++  }
++  int pid = fork();
++  if(pid==0){
++    int freePagesAfterFork = getNumberOfFreePages();
++    if(freePagesAfterFork  + 68 != freePagesAfterSBRK){
++    printf(1," FAILED 2(Free Memory error) %d %d\n",freePagesAfterFork,freePagesAfterSBRK);
++    exit();
++    }
++
++    for(i = 0; i < 20; i++){
++      *lst[i]= i + 50;
++    }
++    if(freePagesAfterFork > getNumberOfFreePages()+16){
++      printf(1," FAILED 3(Free Memory error)%d\n",getNumberOfFreePages());
++      exit();
++    }
++    exit();
++  }
++  wait();
++  for(i = 0; i < 20; i++){
++      if(*lst[i]!=i){
++        printf(1,"\nparent fail %d %d\n",*lst[i]!=i);
++        printf(1," FAILED");
++        return -1;
++      }
++    }
++
++    if(freePages >getNumberOfFreePages()+16){
++      printf(1," FAILED 4(Free Memory error)\n");
++    }
++  return 0;
++}
++
++
++// Test if pages that has been changed by child remain the same in its parent memory.
++int 
++cowSwapFile_killedChiledTest(){
++  printf(1,"cowSwapFile_killedChiledTest :");
++  int* lst[20];
++  int volatile i;
++  for(i = 0; i < 20; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    *lst[i]=i;
++  }
++  int pid = fork();
++  if(pid==0){
++
++    for(i = 0; i < 20; i++){
++      if(*lst[i]!=i){
++        printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
++        printf(1," FAILED");
++        return -1;
++      }
++    }
++    for(i = 0; i < 20; i++){
++      *lst[i] = 66;
++      if(*lst[i]!=66){
++        printf(1,"\nchild fail %d %d\n",*lst[i]!=i);
++        printf(1," FAILED");
++        return -1;
++      }
++    }
++    exit();
++  }
++  wait();
++  int j;
++  for(j = 0; j < 20; j++){
++      if(*lst[j]!=j){
++        printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
++        printf(1," FAILED");
++        return -1;
++      }
++  }
++  return 0;
++}
++
++
++int
++PhysicalMemTest(){
++  printf(1,"PhysicalMemTest :");
++  int* lst[5];
++  int volatile i;
++  for(i = 0; i < 5; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    *lst[i]=i;
++  }
++  for(i = 0; i < 5; i++){
++    if(*lst[i]!=i){
++      printf(1," FAILED");
++      return -1;
++    }
++  }
++  return 0;
++}
++
++int
++SwapFileTest(){
++  printf(1,"SwapFileTest :");
++  int* lst[20];
++  int i;
++  for(i = 0; i < 20; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    *lst[i]=i;
++  }
++  sleep(50);
++  for(i = 0; i < 20; i++){
++    if(*lst[i]!=i){
++      printf(1," FAILED %d %d",*lst[i],i);
++      return -1;
++    }
++  }
++  return 0;
++}
++
++int
++memLeakTest(int freeMem){
++  printf(1,"memLeakTest :");
++
++  if(freeMem != getNumberOfFreePages()){
++      printf(1, "FAILED    expected: %d     got : %d\n",freeMem,getNumberOfFreePages());
++  }else{
++    printf(1, "PASSED\n");
++  }
++  return 0;
++}
++
++
++void
++makeTest(int (*test)()){
++  int testerPid = fork();
++  
++  if(testerPid==0){
++    if(test()==0){
++      printf(1," PASSED\n");
++    }
++    exit();
++  }
++  wait();
++  
++} 
++
++
++
++int
++main(int argc, char *argv[]){
++  
++  int freeMem = getNumberOfFreePages();
++  
++  //  Cow Tests:
++  makeTest(cowPhysicalTest);
++  makeTest(cowSwapFile_pageSeperationTest);
++  makeTest(cowSwapFile_killedChiledTest);
++  makeTest(cowSwapFile_maxPhyInChildTest);
++  
++  // General Page Tests:
++  makeTest(PhysicalMemTest);
++  makeTest(SwapFileTest);
++  memLeakTest(freeMem);
++  exit();
++}
++
++
+diff --git a/defs.h b/defs.h
+index be45622..eb67e5d 100644
+--- a/defs.h
++++ b/defs.h
+@@ -78,6 +78,14 @@ char*           kalloc(void);
+ void            kfree(char*);
+ void            kinit1(void*, void*);
+ void            kinit2(void*, void*);
++void            decrementReferenceCount(uint);
++void            incrementReferenceCount(uint);
++uint            getReferenceCount(uint);
++uint            numFreePages(void);
++void            resetRefCounter(uint);
++void            setReferenceCount(uint pa,int n);
++void            recordTotalFreePages(void);
++int             getTotalFreePages(void);
+ 
+ // kbd.c
+ void            kbdintr(void);
+@@ -130,6 +138,9 @@ void            userinit(void);
+ int             wait(void);
+ void            wakeup(void*);
+ void            yield(void);
++void            ageTickUpdate(void);
++void            advQueueTickUpdate(void);
++void            singleProcDump(int);
+ 
+ // swtch.S
+ void            swtch(struct context**, struct context*);
+@@ -195,6 +206,44 @@ void            switchuvm(struct proc*);
+ void            switchkvm(void);
+ int             copyout(pde_t*, uint, void*, uint);
+ void            clearpteu(pde_t *pgdir, char *uva);
++void            writePageToSwapFile(void);
++int             initPhysicalPage(char*);
++int             scfifoLastPageIndex(void);
++void            swapPage(uint);
++int             indexInSwapFile(uint);
++int             indexInPhysicalMem(uint);
++void            clearSwapPage(int);
++pte_t*         nonStaticWalkpgdir(pde_t* , const void*, int);
++
++void            addPhysicalNode(uint);
++void            removePhysicalNode(char*);
++void            addSwappedNode(char*);
++
++int leastAgeIndex(void);
++
++// swapUtils.c
++/*void            movePageToHead(struct procPG*);
++void            movePageToTail(struct procPG*);
++void            freePageFromList(struct procPG*);*/
+ 
+ // number of elements in fixed-size array
+ #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
++
++#define MAX_PSYC_PAGES  16
++#define EMPTY_VA        (char*)0xffffffff
++
++
++#define MOD_DEBUG          1
++
++#define TRUE               1
++#define FALSE              0
++
++
++#ifdef MOD_DEBUG
++#define DEBUG_PRINT cprintf("DEBUG: "); cprintf
++#else
++#define DEBUG_PRINT(...)
++#endif
++
++
++                
+diff --git a/exec.c b/exec.c
+index b40134f..ef4704c 100644
+--- a/exec.c
++++ b/exec.c
+@@ -19,6 +19,44 @@ exec(char *path, char **argv)
+   pde_t *pgdir, *oldpgdir;
+   struct proc *curproc = myproc();
+ 
++    // TASK 1:
++  #ifndef NONE
++  // cprintf("EXEC!!\n");
++  struct swappedPG swappedPGs[MAX_PSYC_PAGES];
++  struct procPG physicalPGs[MAX_PSYC_PAGES];
++
++  for(i = 0 ;i < MAX_PSYC_PAGES ; i++){
++
++    resetRefCounter((uint)curproc->physicalPGs[i].va);
++    physicalPGs[i].next = curproc->physicalPGs[i].next;
++    physicalPGs[i].prev =  curproc->physicalPGs[i].prev ;
++    physicalPGs[i].va = curproc->physicalPGs[i].va;
++    physicalPGs[i].age = curproc->physicalPGs[i].age;
++    physicalPGs[i].alloceted = curproc->physicalPGs[i].alloceted;
++
++    swappedPGs[i] = curproc->swappedPGs[i];
++    swappedPGs[i].offset = curproc->swappedPGs[i].offset;
++
++    curproc->physicalPGs[i].va = (char*)0xffffffff;
++    curproc->physicalPGs[i].next = 0;
++    curproc->physicalPGs[i].prev = 0;
++    curproc->physicalPGs[i].age = 0;
++    #ifdef LAPA
++        curproc->physicalPGs[i].age = 0xffffffff;
++    #endif
++    curproc->physicalPGs[i].alloceted = 0;
++    curproc->swappedPGs[i].va = (char*)0xffffffff;
++    swappedPGs[i].offset = 0;
++  }
++
++  int nPgsPhysical = curproc->nPgsPhysical;
++  curproc->nPgsPhysical = 0;
++  int nPgsSwap =curproc->nPgsSwap ;
++  curproc->nPgsSwap = 0;
++  int headPG =curproc->headPG;
++  curproc->headPG = -1;
++  #endif
++
+   begin_op();
+ 
+   if((ip = namei(path)) == 0){
+@@ -38,6 +76,8 @@ exec(char *path, char **argv)
+   if((pgdir = setupkvm()) == 0)
+     goto bad;
+ 
++
++
+   // Load program into memory.
+   sz = 0;
+   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
+@@ -104,6 +144,26 @@ exec(char *path, char **argv)
+   return 0;
+ 
+  bad:
++  #ifndef NONE
++  for(i = 0; i < MAX_PSYC_PAGES ; i++){
++      // if(physicalPGs[i].va!=EMPTY_VA){
++      //   setReferenceCount((uint)curproc->physicalPGs[i].va,buRefs[i]);
++      // }
++      curproc->physicalPGs[i].next = physicalPGs[i].next;
++      curproc->physicalPGs[i].prev =  physicalPGs[i].prev;
++      curproc->physicalPGs[i].va = physicalPGs[i].va;
++      curproc->physicalPGs[i].age = physicalPGs[i].age;
++      curproc->physicalPGs[i].alloceted = physicalPGs[i].alloceted;
++
++      curproc->swappedPGs[i] = swappedPGs[i];
++      curproc->swappedPGs[i].offset = swappedPGs[i].offset;
++
++  }
++  curproc->nPgsSwap =nPgsSwap ;
++  curproc->headPG =headPG;
++  curproc->nPgsPhysical = nPgsPhysical;
++  #endif
++
+   if(pgdir)
+     freevm(pgdir);
+   if(ip){
+diff --git a/fs.c b/fs.c
+index 966e978..6de3030 100644
+--- a/fs.c
++++ b/fs.c
+@@ -485,7 +485,6 @@ writei(struct inode *ip, char *src, uint off, uint n)
+ {
+   uint tot, m;
+   struct buf *bp;
+-
+   if(ip->type == T_DEV){
+     if(ip->major < 0 || ip->major >= NDEV || !devsw[ip->major].write)
+       return -1;
+diff --git a/init.c b/init.c
+index 046b551..818d8a4 100644
+--- a/init.c
++++ b/init.c
+@@ -7,6 +7,26 @@
+ 
+ char *argv[] = { "sh", 0 };
+ 
++void
++print_mod(){
++  /*#ifdef NONE
++    printf(1,"NONE");
++  #endif
++  #ifdef SCFIFO
++    printf(1,"SCFIFO");
++  #endif
++  #ifdef NFUA
++    printf(1,"NFUA");
++  #endif
++  #ifdef LAPA
++    printf(1,"LAPA");
++  #endif
++  #ifdef AQ
++    printf(1,"AQ");
++  #endif*/
++  printf(1,"\n");
++}
++
+ int
+ main(void)
+ {
+@@ -20,7 +40,8 @@ main(void)
+   dup(0);  // stderr
+ 
+   for(;;){
+-    printf(1, "init: starting sh\n");
++    printf(1, "init: starting sh ");
++    print_mod();
+     pid = fork();
+     if(pid < 0){
+       printf(1, "init: fork failed\n");
+diff --git a/kalloc.c b/kalloc.c
+index 14cd4f4..1ef98a1 100644
+--- a/kalloc.c
++++ b/kalloc.c
+@@ -9,6 +9,8 @@
+ #include "mmu.h"
+ #include "spinlock.h"
+ 
++#define index(page_addr) (page_addr/PGSIZE)
++
+ void freerange(void *vstart, void *vend);
+ extern char end[]; // first address after kernel loaded from ELF file
+                    // defined by the kernel linker script in kernel.ld
+@@ -21,6 +23,9 @@ struct {
+   struct spinlock lock;
+   int use_lock;
+   struct run *freelist;
++  uint free_pages; 
++  uint totalFreePGs;
++  uint pg_refcount[PHYSTOP/PGSIZE];
+ } kmem;
+ 
+ // Initialization happens in two phases.
+@@ -33,6 +38,7 @@ kinit1(void *vstart, void *vend)
+ {
+   initlock(&kmem.lock, "kmem");
+   kmem.use_lock = 0;
++  kmem.free_pages = 0;
+   freerange(vstart, vend);
+ }
+ 
+@@ -46,10 +52,33 @@ kinit2(void *vstart, void *vend)
+ void
+ freerange(void *vstart, void *vend)
+ {
++
+   char *p;
+   p = (char*)PGROUNDUP((uint)vstart);
+-  for(; p + PGSIZE <= (char*)vend; p += PGSIZE)
++  for(; p + PGSIZE <= (char*)vend; p += PGSIZE){
++    //kmem.pg_refcount[index(V2P(p))] = 0;
+     kfree(p);
++  }
++}
++
++void
++recordTotalFreePages(){
++  if(kmem.use_lock)
++    acquire(&kmem.lock);
++  kmem.totalFreePGs =  kmem.free_pages;
++  if(kmem.use_lock)
++    release(&kmem.lock);
++}
++
++int
++getTotalFreePages(){
++  uint result;
++  if(kmem.use_lock)
++    acquire(&kmem.lock);
++  result =  kmem.totalFreePGs;
++  if(kmem.use_lock)
++    release(&kmem.lock);
++  return result;
+ }
+ //PAGEBREAK: 21
+ // Free the page of physical memory pointed at by v,
+@@ -62,19 +91,38 @@ kfree(char *v)
+   struct run *r;
+ 
+   if((uint)v % PGSIZE || v < end || V2P(v) >= PHYSTOP)
+-    panic("kfree");
+-
+-  // Fill with junk to catch dangling refs.
+-  memset(v, 1, PGSIZE);
++    panic("kfree1");
+ 
+   if(kmem.use_lock)
+     acquire(&kmem.lock);
++  
+   r = (struct run*)v;
++
++  #ifndef NONE
++  if(kmem.pg_refcount[index(V2P(v))] > 0){
++    --kmem.pg_refcount[index(V2P(v))];
++  }
++  if(kmem.pg_refcount[index(V2P(v))] <= 0){
++    // Fill with junk to catch dangling refs.
++    memset(v, 1, PGSIZE);
++    kmem.free_pages++;
++    r->next = kmem.freelist;
++    kmem.freelist = r;
++  }
++  #endif
++  
++  #ifdef NONE
++  memset(v, 1, PGSIZE);
++  
+   r->next = kmem.freelist;
+   kmem.freelist = r;
++
++  #endif
++
+   if(kmem.use_lock)
+     release(&kmem.lock);
+ }
++  
+ 
+ // Allocate one 4096-byte page of physical memory.
+ // Returns a pointer that the kernel can use.
+@@ -87,10 +135,86 @@ kalloc(void)
+   if(kmem.use_lock)
+     acquire(&kmem.lock);
+   r = kmem.freelist;
+-  if(r)
++  if(r){
+     kmem.freelist = r->next;
++    #ifndef NONE
++    kmem.free_pages--;
++    kmem.pg_refcount[index(V2P((char*)r))] = 1;
++    #endif
++  }
++
+   if(kmem.use_lock)
+     release(&kmem.lock);
+   return (char*)r;
+ }
+ 
++uint numFreePages(){
++  acquire(&kmem.lock);
++  uint free_pages = kmem.free_pages;
++  release(&kmem.lock);
++  return free_pages;
++}
++
++void resetRefCounter(uint pa){
++  kmem.pg_refcount[index(pa)] = 1;
++}
++
++void decrementReferenceCount(uint pa)
++{
++  // if(pa > PHYSTOP/PGSIZE){
++  //     cprintf("pa: %d, res: %d\n",pa, PHYSTOP/PGSIZE);
++  //   panic("3");
++  // }
++
++  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
++    panic("decrementReferenceCount");
++
++  acquire(&kmem.lock);
++  --kmem.pg_refcount[index(pa)];
++  release(&kmem.lock);
++
++}
++
++void incrementReferenceCount(uint pa)
++{
++  // if(pa > PHYSTOP/PGSIZE){
++  //     cprintf("pa: %d, res: %d\n",pa, PHYSTOP/PGSIZE);
++  //   panic("2");
++  // }
++  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
++    panic("incrementReferenceCount");
++
++  acquire(&kmem.lock);
++  ++kmem.pg_refcount[index(pa)];
++  release(&kmem.lock);
++}
++
++void setReferenceCount(uint pa,int n)
++{
++
++  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
++    panic("setReferenceCount");
++
++  acquire(&kmem.lock);
++  kmem.pg_refcount[index(pa)]= n;
++  release(&kmem.lock);
++}
++
++uint getReferenceCount(uint pa)
++{
++  // if(pa > PHYSTOP/PGSIZE){
++  //     cprintf("pa: %d, res: %d\n",pa, PHYSTOP/PGSIZE);
++  //   panic("1");
++  // }
++
++  if( pa >= PHYSTOP)
++    panic("getReferenceCount");
++  uint count;
++
++  acquire(&kmem.lock);
++  count = kmem.pg_refcount[index(pa)];
++  release(&kmem.lock);
++
++  return count;
++}
++
+diff --git a/mmu.h b/mmu.h
+index a82d8e2..6ee7751 100644
+--- a/mmu.h
++++ b/mmu.h
+@@ -84,6 +84,7 @@ struct segdesc {
+ #define NPTENTRIES      1024    // # PTEs per page table
+ #define PGSIZE          4096    // bytes mapped by a page
+ 
++#define PGSHIFT         12
+ #define PTXSHIFT        12      // offset of PTX in a linear address
+ #define PDXSHIFT        22      // offset of PDX in a linear address
+ 
+@@ -94,7 +95,10 @@ struct segdesc {
+ #define PTE_P           0x001   // Present
+ #define PTE_W           0x002   // Writeable
+ #define PTE_U           0x004   // User
++#define PTE_A           0x020   // Accessed / refereced
+ #define PTE_PS          0x080   // Page Size
++#define PTE_PG          0x200   // Paged out to secondary storage
++#define PTE_COW         0x800   // Page copy from parent proc
+ 
+ // Address in page table or page directory entry
+ #define PTE_ADDR(pte)   ((uint)(pte) & ~0xFFF)
+diff --git a/proc.c b/proc.c
+index 806b1b1..9c06161 100644
+--- a/proc.c
++++ b/proc.c
+@@ -112,6 +112,33 @@ found:
+   memset(p->context, 0, sizeof *p->context);
+   p->context->eip = (uint)forkret;
+ 
++  #ifndef NONE
++  p->headPG = -1;
++  // Task 1
++  if(p->pid>2){
++    createSwapFile(p);
++
++  }
++
++  int i;
++  for(i = 0; i < MAX_PSYC_PAGES; i++){
++    p->swappedPGs[i].va = (char*)0xffffffff;
++    p->swappedPGs[i].changeCounter = 0;
++    p->physicalPGs[i].va = (char*)0xffffffff;
++    p->physicalPGs[i].prev = 0;
++    p->physicalPGs[i].next = 0;
++    p->physicalPGs[i].age = 0;
++    #ifdef LAPA
++        p->physicalPGs[i].age = 0xffffffff;
++    #endif
++    p->physicalPGs[i].alloceted = 0;
++  }
++  p->nTotalPGout = 0;
++  p->allocatedInPhys = 0;
++  p->nPgsSwap = 0;
++  p->nPgsPhysical = 0;
++  #endif
++
+   return p;
+ }
+ 
+@@ -120,6 +147,10 @@ found:
+ void
+ userinit(void)
+ {
++  #ifndef NONE
++  recordTotalFreePages();
++  #endif
++
+   struct proc *p;
+   extern char _binary_initcode_start[], _binary_initcode_size[];
+ 
+@@ -142,6 +173,7 @@ userinit(void)
+   safestrcpy(p->name, "initcode", sizeof(p->name));
+   p->cwd = namei("/");
+ 
++  DEBUG_PRINT("%d",(PHYSTOP >> PGSHIFT));
+   // this assignment to p->state lets other cores
+   // run this process. the acquire forces the above
+   // writes to be visible, and the lock is also needed
+@@ -212,6 +244,53 @@ fork(void)
+ 
+   pid = np->pid;
+ 
++  #ifndef NONE
++  if(curproc->pid>2){
++    np->nTotalPGout = 0;
++    np->nPGFLT = 0;
++    np->nPgsSwap = curproc->nPgsSwap;
++    np->headPG = curproc->headPG;
++    for(int i = 0; i < MAX_PSYC_PAGES ; i++){
++      np->physicalPGs[i].alloceted = 0;
++      np->physicalPGs[i].next = 0;
++      np->physicalPGs[i].prev =  0 ;
++      np->physicalPGs[i].va = curproc->physicalPGs[i].va;
++      np->physicalPGs[i].age = curproc->physicalPGs[i].age;
++      np->physicalPGs[i].alloceted = curproc->physicalPGs[i].alloceted;
++      np->swappedPGs[i] = curproc->swappedPGs[i];
++
++
++      if(curproc->physicalPGs[i].va != (char*)0xffffffff){
++        np->nPgsPhysical++;
++      }
++    }
++    
++    #if defined(SCFIFO) || defined(AQ)
++    for(int i = 0; i < MAX_PSYC_PAGES; i++){
++      if(curproc->physicalPGs[i].va != (char*)0xffffffff){
++        int next = indexInPhysicalMem((uint)curproc->physicalPGs[i].next->va);
++        np->physicalPGs[i].next = &np->physicalPGs[next];
++
++        if(i!=curproc->headPG){
++          int prev = indexInPhysicalMem((uint)curproc->physicalPGs[i].prev->va);
++          np->physicalPGs[i].prev = &np->physicalPGs[prev];
++        }
++      }
++    }
++    #endif
++    
++    
++    char* newPage = kalloc();
++    for(i = 0; i < (curproc->nPgsSwap)*PGSIZE ; i++){
++      readFromSwapFile(curproc,newPage,i*PGSIZE,PGSIZE);
++      writeToSwapFile(np,newPage,i*PGSIZE,PGSIZE);
++    }
++    kfree(newPage);
++
++  }
++  #endif
++
++
+   acquire(&ptable.lock);
+ 
+   np->state = RUNNABLE;
+@@ -242,6 +321,16 @@ exit(void)
+     }
+   }
+ 
++  #if VERBOSE_PRINT==TRUE
++    singleProcDump(curproc->pid);
++  #endif
++  // Task 1
++  #ifndef NONE
++  if(removeSwapFile(curproc) != 0){
++    panic("exit: cant remove swapfile");
++  }
++  #endif
++
+   begin_op();
+   iput(curproc->cwd);
+   end_op();
+@@ -251,7 +340,6 @@ exit(void)
+ 
+   // Parent might be sleeping in wait().
+   wakeup1(curproc->parent);
+-
+   // Pass abandoned children to init.
+   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+     if(p->parent == curproc){
+@@ -285,7 +373,23 @@ wait(void)
+         continue;
+       havekids = 1;
+       if(p->state == ZOMBIE){
++
+         // Found one.
++        #ifndef NONE
++        int i;
++        for(i = 0; i < MAX_PSYC_PAGES; i++){
++              p->swappedPGs[i].va = (char*)0xffffffff;
++              p->swappedPGs[i].changeCounter = 0;
++              p->physicalPGs[i].va = (char*)0xffffffff;
++              p->physicalPGs[i].prev = 0;
++              p->physicalPGs[i].next = 0;
++              p->physicalPGs[i].age = 0;
++              #ifdef LAPA
++                p->physicalPGs[i].age = 0xffffffff;
++              #endif
++              p->physicalPGs[i].alloceted = 0;
++        }
++        #endif
+         pid = p->pid;
+         kfree(p->kstack);
+         p->kstack = 0;
+@@ -519,11 +623,16 @@ procdump(void)
+   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+     if(p->state == UNUSED)
+       continue;
++    
+     if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
+       state = states[p->state];
+     else
+       state = "???";
++    #ifndef NONE
++    cprintf("%d %s %d %d %d %d %s", p->pid, state, p->nPgsPhysical + p->nPgsSwap, p->nPgsSwap, p->nPGFLT, p->nTotalPGout, p->name);
++    #else
+     cprintf("%d %s %s", p->pid, state, p->name);
++    #endif
+     if(p->state == SLEEPING){
+       getcallerpcs((uint*)p->context->ebp+2, pc);
+       for(i=0; i<10 && pc[i] != 0; i++)
+@@ -531,4 +640,134 @@ procdump(void)
+     }
+     cprintf("\n");
+   }
++  #ifndef NONE
++    cprintf("%d / %d\n",numFreePages() ,getTotalFreePages());
++  #endif
++}
++
++//update aging mechanisem of nfua algo each tick form trap.c
++void
++ageTickUpdate(){
++  struct proc *p;
++  pte_t *pte,*pde,*pgtab;
++
++  acquire(&ptable.lock);
++  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
++    if(p->pid<=2)
++      continue;
++    if(!((p->state == RUNNING) || (p->state == RUNNABLE) || (p->state == SLEEPING)))
++      continue;
++
++    int i;
++    for(i = 0; i < MAX_PSYC_PAGES; i++){
++      if(p->physicalPGs[i].va == (char*)0xffffffff)
++        continue;
++      
++      pde = &p->pgdir[PDX(p->physicalPGs[i].va)];
++      if(*pde & PTE_P){
++        pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
++        pte = &pgtab[PTX(p->physicalPGs[i].va)];
++      } else {
++        cprintf("nfuaUpdate: pte is not PTE_P\n");
++        continue;
++      }
++      if(!pte){
++        cprintf("nfuaUpdate : !pte\n");
++        continue;
++      }
++
++      p->physicalPGs[i].age = ((p->physicalPGs[i].age) >> 1); // shift right
++      if(*pte & PTE_A){                                       // set MSB if accessed
++        uint newBit = 1 << ((sizeof(uint)*8) - 1);
++        p->physicalPGs[i].age |= newBit;
++      }
++    }
++  }
++  release(&ptable.lock);
+ }
++
++void
++advQueueTickUpdate(){
++  struct proc *p = myproc();
++  struct procPG *prevPG,*page = &p->physicalPGs[p->headPG];
++  char* headVa = page->va;
++
++  if(!page->next){
++    panic("getLastPG: empty headPG list");
++  }
++  int i;
++  for(i = 1; i < p->nPgsPhysical && (page->next); i++)
++  {
++      page->next->prev = page;
++      page = page->next;
++  }
++
++  p->physicalPGs[p->headPG].prev = page;
++
++  pte_t *pte1, *pte2;
++  for(;i > 1; i--){
++    pte1 = nonStaticWalkpgdir(p->pgdir,(void*)page->va,0);
++    prevPG = page->prev;
++    if(*pte1 & PTE_A){
++      pte2 = nonStaticWalkpgdir(p->pgdir,(void*)prevPG->va,0);
++      if((*pte2 & PTE_A)==0){
++        if(prevPG->va != headVa){
++          prevPG->prev->next = page;
++          page->prev = prevPG->prev;
++        }
++        
++        if(i!=p->nPgsPhysical){
++          prevPG->next = page->next;// only need next becouse of the reverse initialization when traversing the queue
++        }
++        
++        page->next = prevPG;
++        prevPG ->prev = page;
++        page = prevPG->prev;
++        i--;
++      }
++    }
++    page = prevPG;
++  }
++}
++void
++singleProcDump(int pid)
++{
++  static char *states[] = {
++  [UNUSED]    "unused",
++  [EMBRYO]    "embryo",
++  [SLEEPING]  "sleep ",
++  [RUNNABLE]  "runble",
++  [RUNNING]   "run   ",
++  [ZOMBIE]    "zombie"
++  };
++  int i;
++  struct proc *p;
++  char *state;
++  uint pc[10];
++  
++  for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
++    if(p->pid != pid)
++      continue;
++    if(p->state == UNUSED)
++      continue;
++    if(p->state >= 0 && p->state < NELEM(states) && states[p->state])
++      state = states[p->state];
++    else
++      state = "???";
++    #ifndef NONE
++    cprintf("%d %s %d %d %d %d %s", p->pid, state, p->nPgsPhysical + p->nPgsSwap, p->nPgsSwap, p->nPGFLT, p->nTotalPGout, p->name);
++    #else
++    cprintf("%d %s %s", p->pid, state, p->name);
++    #endif
++    if(p->state == SLEEPING){
++      getcallerpcs((uint*)p->context->ebp+2, pc);
++      for(i=0; i<10 && pc[i] != 0; i++)
++        cprintf(" %p", pc[i]);
++    }
++    cprintf("\n");
++    break;
++  }
++  #ifndef NONE
++    cprintf("%d / %d\n",numFreePages() ,getTotalFreePages());
++  #endif
++}
+\ No newline at end of file
+diff --git a/proc.h b/proc.h
+index f8d364e..230e6f6 100644
+--- a/proc.h
++++ b/proc.h
+@@ -1,3 +1,5 @@
++#include "defs.h"
++
+ // Per-CPU state
+ struct cpu {
+   uchar apicid;                // Local APIC ID
+@@ -34,6 +36,28 @@ struct context {
+ 
+ enum procstate { UNUSED, EMBRYO, SLEEPING, RUNNABLE, RUNNING, ZOMBIE };
+ 
++
++struct procPG{
++  char *va;
++  uint age;
++  int alloceted;
++  struct procPG *next;
++  struct procPG *prev;
++};
++
++struct sharedProcList{
++  struct proc *p;
++  struct sharedProcList *next;
++};
++
++struct swappedPG{
++  int offset;
++  struct proc* holder;
++  struct sharedProcList *refList;
++  int changeCounter;
++  char *va;
++};
++
+ // Per-process state
+ struct proc {
+   uint sz;                     // Size of process memory (bytes)
+@@ -51,6 +75,17 @@ struct proc {
+   char name[16];               // Process name (debugging)
+   //Swap file. must initiate with create swap file
+   struct file *swapFile;      //page file
++
++  int nPgsPhysical;
++  int nPgsSwap;
++  int nTotalPGout;
++  int nPGFLT;
++
++  int allocatedInPhys;
++  int headPG;
++  struct swappedPG swappedPGs[MAX_PSYC_PAGES];
++  struct procPG physicalPGs[MAX_PSYC_PAGES];
++  
+ };
+ 
+ // Process memory is laid out contiguously, low addresses first:
+diff --git a/sanity.c b/sanity.c
+new file mode 100644
+index 0000000..ca6e9ab
+--- /dev/null
++++ b/sanity.c
+@@ -0,0 +1,39 @@
++#include "types.h"
++#include "stat.h"
++#include "user.h"
++#define PGSIZE          4096
++
++int
++SwapFileTest(){
++  printf(1,"SwapFile :");
++  int* lst[25];
++  int volatile i;
++  for(i = 0; i < 25; i++){
++    lst[i] = (int*)sbrk(PGSIZE);
++    //printf(1,"making space %d\n",((uint)(lst[i])));
++    *lst[i]=i;
++  }
++  for(i = 0; i < 25; i++){
++    if(*lst[i]!=i){
++      return -1;
++    }
++  }
++  return 0;
++}
++
++void
++printResult(int res){
++  if(res == -1){
++    printf(1," FAILED\n");
++  }else{
++    printf(1," PASSED\n");
++  }
++}
++
++int
++main(int argc, char *argv[]){
++  printResult(SwapFileTest());
++  exit();
++}
++
++
+diff --git a/swapUtils.c b/swapUtils.c
+new file mode 100644
+index 0000000..4309179
+--- /dev/null
++++ b/swapUtils.c
+@@ -0,0 +1,102 @@
++/*#include "param.h"
++#include "types.h"
++#include "defs.h"
++#include "x86.h"
++#include "memlayout.h"
++#include "mmu.h"
++#include "proc.h"
++#include "elf.h"
++int
++indexInPhysicalMem(struct procPG *pg){
++  struct proc *p =myproc();
++  int i;
++  for(i = 0 ; i < MAX_PSYC_PAGES; i++){
++
++    if(p->physicalPGs[i].va == pg->va){
++      return i;
++    }
++  }
++  panic("scfifoSwap: could not find page in swap file");
++  return -1;
++}
++
++
++void 
++movePageToHead(struct procPG *pg){
++  
++  struct proc *p = myproc();
++
++  if(p->headPG==-1){
++    panic("aaa");
++  }
++  if(pg->prev){
++    pg->prev->next = pg->next;
++  }
++  if(pg->next){
++    pg->next->prev = pg->prev;
++  }
++
++  pg->next = &p->physicalPGs[p->headPG];
++  pg->prev = 0;
++  p->physicalPGs[p->headPG].prev = pg;
++
++}
++
++void 
++movePageToTail(struct procPG *pg){
++  
++  struct proc *p = myproc();
++
++  if(p->headPG==-1){
++    panic("aaa");
++  }
++  if(pg->prev){
++    pg->prev->next = pg->next;
++  }
++  if(pg->next){
++    pg->next->prev = pg->prev;
++  }
++
++  struct procPG *tempPG = &p->physicalPGs[p->headPG];
++  while (tempPG->next && tempPG->next->va !=(char*)0xffffffff)
++  {
++    tempPG = tempPG->next;
++  }
++  
++  tempPG->next = pg;
++  pg->prev = tempPG;
++  
++
++}
++
++void freePageFromList(struct procPG *pg){
++  struct proc *p = myproc();
++  if(p->physicalPGs[p->headPG].va == pg->va){
++    int i = 0;
++    for(i = 0; i < MAX_PSYC_PAGES ; i++){
++      if(p->physicalPGs[i].va == pg->next->va){
++        pg->va = (char*)0xffffffff;
++        pg->next = 0;
++        pg->prev = 0;
++        p->headPG = i;
++        p->physicalPGs[i].prev = 0;
++        
++        return;
++      }
++    }
++  }
++  if(pg->prev){
++    pg->prev->next = pg->next;
++  }
++  if(pg->next){
++    pg->next->prev = pg->prev;
++  }
++
++  pg->va = (char*)0xffffffff;
++  pg->next = 0;
++  pg->prev = 0;
++  
++  return;
++}
++
++*/
+\ No newline at end of file
+diff --git a/syscall.c b/syscall.c
+index ee85261..21c1253 100644
+--- a/syscall.c
++++ b/syscall.c
+@@ -103,6 +103,8 @@ extern int sys_unlink(void);
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_getNumberOfFreePages(void);
++extern int sys_printProcDump(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +128,8 @@ static int (*syscalls[])(void) = {
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_getNumberOfFreePages] sys_getNumberOfFreePages,
++[SYS_printProcDump] sys_printProcDump,
+ };
+ 
+ void
+diff --git a/syscall.h b/syscall.h
+index bc5f356..e6b2c06 100644
+--- a/syscall.h
++++ b/syscall.h
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_getNumberOfFreePages 22
++#define SYS_printProcDump 23
+diff --git a/sysproc.c b/sysproc.c
+index 0686d29..a21451b 100644
+--- a/sysproc.c
++++ b/sysproc.c
+@@ -47,7 +47,7 @@ sys_sbrk(void)
+ {
+   int addr;
+   int n;
+-
++  
+   if(argint(0, &n) < 0)
+     return -1;
+   addr = myproc()->sz;
+@@ -89,3 +89,21 @@ sys_uptime(void)
+   release(&tickslock);
+   return xticks;
+ }
++
++int
++sys_getNumberOfFreePages(void){
++  return numFreePages();
++}
++
++int
++sys_printProcDump(void){
++  int pid;
++  if(argint(0, &pid) < 0)
++    return -1;
++  if(pid == 0){
++    procdump();
++  }else{
++    singleProcDump(pid);
++  }
++  return 0;
++}
+\ No newline at end of file
+diff --git a/trap.c b/trap.c
+index 41c66eb..0842a69 100644
+--- a/trap.c
++++ b/trap.c
+@@ -8,6 +8,7 @@
+ #include "traps.h"
+ #include "spinlock.h"
+ 
++
+ // Interrupt descriptor table (shared by all CPUs).
+ struct gatedesc idt[256];
+ extern uint vectors[];  // in vectors.S: array of 256 entry pointers
+@@ -36,6 +37,10 @@ idtinit(void)
+ void
+ trap(struct trapframe *tf)
+ {
++  #ifndef NONE
++    uint addr;
++  #endif
++
+   if(tf->trapno == T_SYSCALL){
+     if(myproc()->killed)
+       exit();
+@@ -50,6 +55,12 @@ trap(struct trapframe *tf)
+   case T_IRQ0 + IRQ_TIMER:
+     if(cpuid() == 0){
+       acquire(&tickslock);
++      /*#ifdef NFUA
++        ageTickUpdate();
++      #endif
++      #ifdef LAPA
++        ageTickUpdate();
++      #endif*/
+       ticks++;
+       wakeup(&ticks);
+       release(&tickslock);
+@@ -78,6 +89,102 @@ trap(struct trapframe *tf)
+     lapiceoi();
+     break;
+ 
++  case T_PGFLT:
++    #ifndef NONE
++    // TODO: Chek for illigal addr
++    
++      #ifdef NFUA
++        ageTickUpdate();
++      #endif
++      #ifdef LAPA
++        ageTickUpdate();
++      #endif
++      #ifdef QA
++        advQueueTickUpdate();
++      #endif
++      
++      /*if(myproc()->pid<=2){
++
++        lapiceoi();
++        break;
++      }*/
++
++      addr = rcr2();
++      pte_t *pte = nonStaticWalkpgdir(myproc()->pgdir,(char*)addr,0);
++      uint pa = PTE_ADDR(*pte);
++
++      //int inSwapFile = (((uint*)PTE_ADDR(P2V(*vaddr)))[PTX(addr)] & PTE_PG);
++      //cprintf("first %x %x\n",pa,addr);
++      
++
++      if((*pte & PTE_U ) == 0){
++        break;
++      }
++
++      //cprintf("trap!\n");
++
++      //cprintf("PGFLT: ");
++      if(*pte & PTE_PG){
++        //cprintf("swapping: %x\n",PGROUNDDOWN(addr));
++        myproc()->nPGFLT++;
++        swapPage(addr);
++        lcr3(V2P(myproc()->pgdir));
++      }
++      else if((*pte & PTE_W) == 0) {
++        int k = 0;
++        for(k = 0 ; k <  MAX_PSYC_PAGES; k++){
++          
++          if(myproc()->physicalPGs[k].va == (char*)PGROUNDDOWN(addr)){
++            myproc()->physicalPGs[k].alloceted = 1;
++            myproc()->physicalPGs[k].age = 0;
++            #ifdef LAPA
++              myproc()->physicalPGs[k].age = 0xffffffff;
++            #endif
++            break;
++          }
++        }
++        if((*pte & PTE_COW) != 0){
++          //cprintf("write %x\n",PGROUNDDOWN(addr));
++          uint refCount = getReferenceCount(pa);
++          char *mem;
++          if(refCount > 1) {
++
++          
++            
++            if((mem = kalloc()) == 0) {
++              cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);
++              myproc()->killed = 1;
++              return;
++            }
++
++            memmove(mem, (char*)P2V(pa), PGSIZE);
++            *pte = V2P(mem) | PTE_P | PTE_W | PTE_FLAGS(*pte);
++            *pte &= ~PTE_COW;
++
++            lcr3(V2P(myproc()->pgdir));
++            decrementReferenceCount(pa);
++
++          }
++          else {
++            // remove the read-only restriction on the trapping page
++            *pte |= PTE_W;
++            *pte &= ~PTE_COW;
++            lcr3(V2P(myproc()->pgdir));
++          }
++      }
++        
++    }
++    lcr3(V2P(myproc()->pgdir));
++    if(pa < PHYSTOP){
++      break;
++    }
++    
++    #endif
++
++    
++
++
++
+   //PAGEBREAK: 13
+   default:
+     if(myproc() == 0 || (tf->cs&3) == 0){
+diff --git a/types.h b/types.h
+index e4adf64..669f5c9 100644
+--- a/types.h
++++ b/types.h
+@@ -2,3 +2,4 @@ typedef unsigned int   uint;
+ typedef unsigned short ushort;
+ typedef unsigned char  uchar;
+ typedef uint pde_t;
++typedef uint pte_t;
+\ No newline at end of file
+diff --git a/user.h b/user.h
+index 4f99c52..c7f3cd4 100644
+--- a/user.h
++++ b/user.h
+@@ -23,6 +23,8 @@ int getpid(void);
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int getNumberOfFreePages(void);
++int printProcDump(int);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff --git a/usertests.c b/usertests.c
+index a1e97e7..907179c 100644
+--- a/usertests.c
++++ b/usertests.c
+@@ -1767,7 +1767,7 @@ main(int argc, char *argv[])
+   bigwrite();
+   bigargtest();
+   bsstest();
+-  sbrktest();
++  //sbrktest();
+   validatetest();
+ 
+   opentest();
+@@ -1779,7 +1779,7 @@ main(int argc, char *argv[])
+   exitiputtest();
+   iputtest();
+ 
+-  mem();
++  //mem();
+   pipe1();
+   preempt();
+   exitwait();
+diff --git a/usys.S b/usys.S
+index 8bfd8a1..4935b39 100644
+--- a/usys.S
++++ b/usys.S
+@@ -29,3 +29,5 @@ SYSCALL(getpid)
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(getNumberOfFreePages)
++SYSCALL(printProcDump)
+diff --git a/vm.c b/vm.c
+index 7134cff..16d95d1 100644
+--- a/vm.c
++++ b/vm.c
+@@ -7,6 +7,9 @@
+ #include "proc.h"
+ #include "elf.h"
+ 
++//TODOS : 
++//  kill a proc if it attemts to write to memory, but there is insufficient memory to allocate a COW page.
++
+ extern char data[];  // defined by kernel.ld
+ pde_t *kpgdir;  // for use in scheduler()
+ 
+@@ -29,6 +32,30 @@ seginit(void)
+   lgdt(c->gdt, sizeof(c->gdt));
+ }
+ 
++
++pte_t*
++nonStaticWalkpgdir(pde_t *pgdir, const void *va, int alloc)
++{
++  pde_t *pde;
++  pte_t *pgtab;
++
++  pde = &pgdir[PDX(va)];
++  if(*pde & PTE_P){
++    pgtab = (pte_t*)P2V(PTE_ADDR(*pde));
++  } else {
++    if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
++      return 0;
++
++    // Make sure all those PTE_P bits are zero.
++    memset(pgtab, 0, PGSIZE);
++    // The permissions here are overly generous, but they can
++    // be further restricted by the permissions in the page table
++    // entries, if necessary.
++    *pde = V2P(pgtab) | PTE_P | PTE_W | PTE_U;
++  }
++  return &pgtab[PTX(va)];
++}
++
+ // Return the address of the PTE in page table pgdir
+ // that corresponds to virtual address va.  If alloc!=0,
+ // create any required page table pages.
+@@ -44,6 +71,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
+   } else {
+     if(!alloc || (pgtab = (pte_t*)kalloc()) == 0)
+       return 0;
++
+     // Make sure all those PTE_P bits are zero.
+     memset(pgtab, 0, PGSIZE);
+     // The permissions here are overly generous, but they can
+@@ -97,7 +125,7 @@ mappages(pde_t *pgdir, void *va, uint size, uint pa, int perm)
+ //   0xfe000000..0: mapped direct (devices such as ioapic)
+ //
+ // The kernel allocates physical memory for its heap and for user memory
+-// between V2P(end) and the end of physical memory (PHYSTOP)
++// betfen V2P(end) and the end of physical memory (PHYSTOP)
+ // (directly addressable from end..P2V(PHYSTOP)).
+ 
+ // This table defines the kernel's mappings, which are present in
+@@ -222,21 +250,37 @@ int
+ allocuvm(pde_t *pgdir, uint oldsz, uint newsz)
+ {
+   char *mem;
+-  uint a;
++  uint a;  
+ 
+   if(newsz >= KERNBASE)
+     return 0;
++
+   if(newsz < oldsz)
+     return oldsz;
+ 
+   a = PGROUNDUP(oldsz);
+   for(; a < newsz; a += PGSIZE){
++
++    #ifndef NONE
++      if(myproc()->nPgsPhysical >= MAX_PSYC_PAGES){
++        writePageToSwapFile();
++      }
++    #endif //ndef NONE
++ 
+     mem = kalloc();
+     if(mem == 0){
+       cprintf("allocuvm out of memory\n");
+       deallocuvm(pgdir, newsz, oldsz);
+       return 0;
+     }
++
++    #ifndef NONE
++      initPhysicalPage((char*)a);
++    #endif
++
++    
++    
++
+     memset(mem, 0, PGSIZE);
+     if(mappages(pgdir, (char*)a, PGSIZE, V2P(mem), PTE_W|PTE_U) < 0){
+       cprintf("allocuvm out of memory (2)\n");
+@@ -257,9 +301,9 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
+ {
+   pte_t *pte;
+   uint a, pa;
+-
+-  if(newsz >= oldsz)
++  if(newsz >= oldsz){
+     return oldsz;
++  }
+ 
+   a = PGROUNDUP(newsz);
+   for(; a  < oldsz; a += PGSIZE){
+@@ -272,7 +316,29 @@ deallocuvm(pde_t *pgdir, uint oldsz, uint newsz)
+         panic("kfree");
+       char *v = P2V(pa);
+       kfree(v);
++
++
++      #ifndef NONE
++      struct proc *p = myproc();
++      int i;
++      for(i = 0; i < MAX_PSYC_PAGES; i++){
++          if(i==MAX_PSYC_PAGES){
++            cprintf("%d\n",a);
++            panic("deallocuvm: cant find page1");
++          }
++          if(p->physicalPGs[i].va == (char*)v){
++            removePhysicalNode(v);
++            break;
++          }if(p->swappedPGs[i].va == (char*)v){
++            p->swappedPGs[i].va = (char*) 0xffffffff;
++            p->swappedPGs[i].offset = -1;
++
++            break;
++          }
++      }
++      #endif
+       *pte = 0;
++  
+     }
+   }
+   return newsz;
+@@ -291,6 +357,7 @@ freevm(pde_t *pgdir)
+   for(i = 0; i < NPDENTRIES; i++){
+     if(pgdir[i] & PTE_P){
+       char * v = P2V(PTE_ADDR(pgdir[i]));
++
+       kfree(v);
+     }
+   }
+@@ -318,29 +385,71 @@ copyuvm(pde_t *pgdir, uint sz)
+   pde_t *d;
+   pte_t *pte;
+   uint pa, i, flags;
+-  char *mem;
+ 
+   if((d = setupkvm()) == 0)
+     return 0;
+   for(i = 0; i < sz; i += PGSIZE){
+     if((pte = walkpgdir(pgdir, (void *) i, 0)) == 0)
+       panic("copyuvm: pte should exist");
+-    if(!(*pte & PTE_P))
++    if(!(*pte & PTE_P) && !(*pte & PTE_PG))
+       panic("copyuvm: page not present");
+-    pa = PTE_ADDR(*pte);
+-    flags = PTE_FLAGS(*pte);
+-    if((mem = kalloc()) == 0)
+-      goto bad;
+-    memmove(mem, (char*)P2V(pa), PGSIZE);
+-    if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
++    
++    #ifndef NONE
++    if(myproc()->pid>2){
++      if(*pte & PTE_PG){
++        pte = walkpgdir(d,(void*)i,1);
++        *pte= PTE_U | PTE_W | PTE_PG;
++      /* if(mappages(d, (void*)i, PGSIZE, pa, PTE_W | PTE_U | PTE_PG) < 0) {
++          goto bad;
++        }*/
++        continue;
++      }
++      // Task 1
++      *pte = *pte & ~PTE_W;
++      *pte = *pte | PTE_COW;
++    
++      pa = PTE_ADDR(*pte);
++      flags = PTE_FLAGS(*pte);
++
++      if(mappages(d, (void*)i, PGSIZE, pa, flags) < 0) {
++        goto bad;
++      }
++      incrementReferenceCount(pa);
++    }else{
++      char *mem;
++      pa = PTE_ADDR(*pte);
++      flags = PTE_FLAGS(*pte);
++
++      if((mem = kalloc()) == 0)
++        goto bad;
++      memmove(mem, (char*)P2V(pa), PGSIZE);
++      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
+       kfree(mem);
+       goto bad;
++      }
+     }
++    #endif
++
++    #ifdef NONE
++      char *mem;
++      pa = PTE_ADDR(*pte);
++      flags = PTE_FLAGS(*pte);
++
++      if((mem = kalloc()) == 0)
++        goto bad;
++      memmove(mem, (char*)P2V(pa), PGSIZE);
++      if(mappages(d, (void*)i, PGSIZE, V2P(mem), flags) < 0) {
++        kfree(mem);
++        goto bad;
++      }
++    #endif
+   }
++  lcr3(V2P(pgdir));
+   return d;
+ 
+ bad:
+   freevm(d);
++  lcr3(V2P(pgdir));
+   return 0;
+ }
+ 
+@@ -385,10 +494,357 @@ copyout(pde_t *pgdir, uint va, void *p, uint len)
+   return 0;
+ }
+ 
++/***************************************************************************************************************************************************************/
++/************************************************************************   Algorithems Utils    ***************************************************************/
++/***************************************************************************************************************************************************************/
++int 
++scfifoLastPageIndex(){/****************************************************************************     SCFIFO      *********/
++  struct proc *p = myproc();
++  struct procPG *page = &p->physicalPGs[p->headPG];
++
++  if(!page->next){
++    panic("getLastPG: empty headPG list");
++  }
++  int i;
++  for(i = 1; i < p->nPgsPhysical && (page->next); i++)
++  {
++      page->next->prev = page;
++      page = page->next;
++  }
++  p->physicalPGs[p->headPG].prev = page;
++  uint tailVa = (uint) page->va;
++
++  pte_t *pte;
++  do{ 
++    pte = walkpgdir(p->pgdir,(void*)page->va,0);
++    if(*pte & PTE_A){
++      *pte &= ~PTE_A;
++    }else{
++      return indexInPhysicalMem((uint)page->va);
++    }
++    page = page->prev;
++    i--;
++  }while ((uint)page->va != tailVa);
++
++  return indexInPhysicalMem((uint)page->va);
++}
++
++int 
++aqLeastAgeIndex(){/****************************************************************************        AQ        *********/
++  struct proc *p = myproc();
++  struct procPG *page = &p->physicalPGs[p->headPG];
++
++  if(!page->next){
++    panic("getLastPG: empty headPG list");
++  }
++  int i;
++  for(i = 1; i < p->nPgsPhysical && (page->next); i++)
++  {
++      page = page->next;
++  }
++  return indexInPhysicalMem((uint)page->va);
++}
++
++int
++nfuaLeastAgeIndex(){/**********************************************************************************      NFUA       *********/
++  struct proc *p = myproc();
++  uint leastAge = __UINT32_MAX__;
++  int leastIndex = -1;
++  int i;
++
++  for(i = 0; i < p->nPgsPhysical ; i++){
++    if(p->physicalPGs[i].age<=leastAge && p->physicalPGs[i].va != (char*)0xffffffff){
++      leastIndex = i;
++      leastAge = p->physicalPGs[i].age;
++    }
++  }
++  if(leastIndex == -1){
++    panic("IndexMaxAgePG : could not find age >= 0");
++  }
++  return leastIndex;
++}
++
++int
++lapaLeastAgeIndex(){/**********************************************************************************      LAPA       *********/
++  struct proc *p = myproc();
++  uint leastAge = __UINT32_MAX__;
++  uint leastAgeSetCount = 32;
++  int leastIndex = -1;
++  uint count;
++  uint tempAge;
++  int i;
++
++  for(i = 0; i < p->nPgsPhysical ; i++){
++    if(p->physicalPGs[i].va != (char*)0xffffffff){
++      tempAge = p->physicalPGs[i].age;
++      count = 0; 
++      while (tempAge) { 
++          count += tempAge & 1; 
++          tempAge >>= 1; 
++      } 
++      if(count<=leastAgeSetCount){
++        if(count == leastAgeSetCount &&  p->physicalPGs[i].age <= leastAge){
++          leastIndex = i;
++          leastAge = p->physicalPGs[i].age;
++          leastAgeSetCount = count;
++        }
++        
++      }
++    }
++  }
++  if(leastIndex == -1){
++    panic("lapaLeastAge : could not find age >= 0");
++  }
++  return leastIndex;
++}
++
++
++int
++pageIndexToWrite(){
++  #ifdef NFUA
++    return nfuaLeastAgeIndex();
++  #endif
++  #ifdef SCFIFO
++    return scfifoLastPageIndex();
++  #endif
++  #ifdef LAPA
++    return lapaLeastAgeIndex();
++  #endif
++  #ifdef AQ
++    return aqLeastAgeIndex();
++  #endif
++  panic("no def in pageIndexToWrite");
++}
++
++/***************************************************************************************************************************************************************/
++/****************************************************************************    Nodes    **********************************************************************/
++/***************************************************************************************************************************************************************/
++
++void
++addSwappedNode(char* addr){
++  struct proc *p = myproc();
++  int i;
++  for(i = 0; i <= MAX_PSYC_PAGES; i++){
++    if(i== MAX_PSYC_PAGES){
++      panic(" scfifoWriteToSwap: unable to find slot for swap");
++    }
++    if(p->swappedPGs[i].va == EMPTY_VA){
++      p->swappedPGs[i].offset = i*PGSIZE;
++      p->swappedPGs[i].va =(char*)PGROUNDDOWN((uint)addr);
++      return;
++    }
++  }
++}
++
++void
++removePhysicalNode(char* va){
++  struct proc *p = myproc();
++  int i;
++  for(i = 0; i <= MAX_PSYC_PAGES; i++){
++    if(i==MAX_PSYC_PAGES){
++      //cprintf("addres was: %x\n",(uint)va);
++      panic("removePhysicalNode: cannot find phy page");
++    }
++    if(p->physicalPGs[i].va ==(char*) PGROUNDDOWN((uint)va)){
++      p->physicalPGs[i].va = EMPTY_VA;
++      p->physicalPGs[i].age = 0;
++      p->physicalPGs[i].alloceted = 0;
++      #ifdef LAPA
++        p->physicalPGs[i].age = 0xffffffff;
++      #endif
++      #if defined(SCFIFO) || defined(AQ)
++      if(p->headPG == i){
++        p->headPG = indexInPhysicalMem((uint)p->physicalPGs[i].next->va);
++        p->physicalPGs[i].next->prev = (void*)0;
++        return;
++      }
++      if(p->physicalPGs[i].prev){
++        p->physicalPGs[i].prev->next = p->physicalPGs[i].next;
++      }
++      #endif
++      return;
++    }
++  }
++}
++
++
++void
++addPhysicalNode(uint addr){
++  struct proc *p = myproc();
++  int i;
++  for(i = 0; i <= MAX_PSYC_PAGES; i++){
++    if(i==MAX_PSYC_PAGES){
++      panic("addPhysicalNode: cannot allocate phy page");
++    }
++    if(p->physicalPGs[i].va == EMPTY_VA){
++      p->physicalPGs[i].va = (char*)PGROUNDDOWN(addr);
++      p->physicalPGs[i].age = 0;
++      p->physicalPGs[i].alloceted = 1;
++
++      #ifdef LAPA
++        p->physicalPGs[i].age = 0xffffffff;
++      #endif
++      #if defined(SCFIFO) || defined(AQ)
++        if(p->headPG == -1){
++          p->physicalPGs[i].prev = 0;
++          p->physicalPGs[i].next = 0;
++        }
++        if(p->physicalPGs[i].prev){
++          p->physicalPGs[i].prev->next = p->physicalPGs[i].next;
++        }
++        p->physicalPGs[i].next = &p->physicalPGs[p->headPG];
++        p->physicalPGs[p->headPG].prev = &p->physicalPGs[i];
++        p->physicalPGs[i].prev = 0;
++        p->headPG = i;
++      #endif
++      myproc()->nPgsPhysical++;
++      return;
++    }
++  }
++}
++
++
++void
++clearSwapPage(int index){
++  struct proc *p = myproc();
++  p->nPgsSwap--;
++  p->swappedPGs[index].va = EMPTY_VA;
++}
++
++/***************************************************************************************************************************************************************/
++/**************************************************************************    Indexing    *********************************************************************/
++/***************************************************************************************************************************************************************/
++
++int
++indexInSwapFile(uint addr){
++  
++  struct proc *p =myproc();
++  int i;
++  for(i = 0 ; i < MAX_PSYC_PAGES; i++){
++    if(p->swappedPGs[i].va == (char*) PGROUNDDOWN(addr)){
++      return i;
++    }
++  }
++  for(i = 0 ; i < MAX_PSYC_PAGES; i++){
++
++    cprintf("after panic: %x as %x\n",(uint)p->physicalPGs[i].va,PGROUNDDOWN(addr));
++  }
++  panic("scfifoSwap: could not find page in swap file");
++  return -1;
++}
++
++int
++indexInPhysicalMem(uint addr){
++  struct proc *p =myproc();
++  int i;
++  for(i = 0 ; i < MAX_PSYC_PAGES; i++){
++    if(p->physicalPGs[i].va == (char*) PGROUNDDOWN(addr)){
++      return i;
++    }else{
++      //cprintf("addr : %x\n",p->physicalPGs[i].va);
++    }
++  }
++  cprintf("tried find : %x\n",addr);
++  panic("scfifoSwap: could not find page in physical mem");
++  return -1;
++}
++
++
++/***************************************************************************************************************************************************************/
++/*********************************************************************   Paging Operations     *****************************************************************/
++/***************************************************************************************************************************************************************/
++
++// swaps out a page
++void
++writePageToSwapFile(){
++  //cprintf("write %x\n",va);
++  struct proc *p = myproc();
++  struct procPG *pageToWrite = &p->physicalPGs[pageIndexToWrite()];
++
++  pte_t *pte = walkpgdir(p->pgdir, (void*)pageToWrite->va, 0);
++
++  addSwappedNode(pageToWrite->va);
++
++  acquire(&tickslock);
++  if(*pte & PTE_A){
++    *pte &= ~PTE_A;
++  }
++  release(&tickslock);
++
++
++  int offset = p->swappedPGs[indexInSwapFile((uint)pageToWrite->va)].offset;
++
++
++  if(writeToSwapFile(p,(char*)PTE_ADDR(pageToWrite->va),offset, PGSIZE)<=0){
++    panic("scfifoWriteToSwap: writeToSwapFile");
++  }
++
++  kfree((char*)(P2V(PTE_ADDR(*pte))));
++
++
++  //}
++  *pte |= PTE_PG;
++  *pte &= ~PTE_P;
++  //*pte &= ~PTE_COW;
++
++  removePhysicalNode(pageToWrite->va);
++
++  lcr3(V2P(p->pgdir));  // switch to process's address space
++  
++
++ 
++  myproc()->nPgsPhysical--;
++  myproc()->nTotalPGout++;
++  myproc()->nPgsSwap++;
++}
++
++void 
++swapPage(uint addr){
++  pte_t *pte;
++  char* buf;
++  struct proc *p = myproc();
++  int swapIndex = indexInSwapFile(addr);
++
++  if(p->nPgsPhysical>=MAX_PSYC_PAGES){
++    writePageToSwapFile();
++  }
++
++  if((buf = kalloc()) == 0){
++    panic("nfuaSwap : allocating buf");
++  }
++
++  memset(buf, 0, PGSIZE );
++  
++  if(readFromSwapFile(p, buf, swapIndex*PGSIZE, PGSIZE) <= 0){
++      panic("scfifoSwap: read from swapfile");
++  }
++
++  mappages(p->pgdir,(char*)PTE_ADDR(PGROUNDDOWN(addr)) , PGSIZE , V2P(buf), PTE_W | PTE_U);
++  
++  clearSwapPage(swapIndex);
++
++  pte = walkpgdir(p->pgdir,(void*)addr, 0);
++  *pte |= PTE_P | PTE_W;
++  *pte &= ~PTE_COW;
++  *pte &= ~PTE_PG;
++
++  
++  addPhysicalNode(addr);
++  
++  lcr3(V2P(p->pgdir));
++}
++
++int
++initPhysicalPage(char *va){
++  addPhysicalNode((uint) va);
++  return 0;
++}
++
++
++
+ //PAGEBREAK!
+ // Blank page.
+ //PAGEBREAK!
+ // Blank page.
+ //PAGEBREAK!
+-// Blank page.
+-
++// Blank page.
+\ No newline at end of file
