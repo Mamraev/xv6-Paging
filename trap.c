@@ -157,11 +157,6 @@ trap(struct trapframe *tf)
           for(k = 0 ; k <  MAX_PSYC_PAGES; k++){
             
             if(myproc()->physicalPGs[k].va == (char*)PGROUNDDOWN(addr)){
-              //cprintf("found\n");
-              /*if(myproc()->physicalPGs[k].alloceted == 0){
-                //cprintf("~~%x\n",(char*)PGROUNDDOWN(addr));
-                myproc()->allocatedInPhys++;
-              }*/
               myproc()->physicalPGs[k].alloceted = 1;
               myproc()->physicalPGs[k].age = 0;
               break;

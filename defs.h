@@ -83,6 +83,7 @@ void            incrementReferenceCount(uint);
 uint            getReferenceCount(uint);
 uint            numFreePages(void);
 void            resetRefCounter(uint);
+void            setReferenceCount(uint pa,int n);
 
 // kbd.c
 void            kbdintr(void);
@@ -204,21 +205,28 @@ int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
 struct procPG*  writePageToSwapFile(char*);
 int             initPhysicalPage(char*);
-struct procPG*  getLastPageSCFIFO(void);
+int             scfifoLastPageIndex(void);
 void            swapPage(uint);
 int             indexInSwapFile(uint);
+int             indexInPhysicalMem(uint);
+void            clearSwapPage(int);
+
+void            addPhysicalNode(uint);
+void            removePhysicalNode(char*);
+void            addSwappedNode(char*);
 
 int leastAgeIndex(void);
 
 // swapUtils.c
-void            movePageToHead(struct procPG*);
+/*void            movePageToHead(struct procPG*);
 void            movePageToTail(struct procPG*);
-void            freePageFromList(struct procPG*);
+void            freePageFromList(struct procPG*);*/
 
 // number of elements in fixed-size array
 #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
 
-#define MAX_PSYC_PAGES 16
+#define MAX_PSYC_PAGES  16
+#define EMPTY_VA        (char*)0xffffffff
 
 
 #define MOD_DEBUG          1

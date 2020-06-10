@@ -133,7 +133,6 @@ found:
   p->allocatedInPhys = 0;
   p->nPgsSwap = 0;
   p->nPgsPhysical = 0;
-  p->headPG = 0;
 
   return p;
 }
@@ -242,21 +241,20 @@ fork(void)
     np->nPGFLT = 0;
     //np->nPgsPhysical = curproc->nPgsPhysical;
     np->nPgsSwap = curproc->nPgsSwap;
+    np->headPG = curproc->headPG;
     for(int i = 0; i < MAX_PSYC_PAGES ; i++){
-      memmove(&np->physicalPGs[i],&curproc->physicalPGs[i],sizeof(struct procPG));
-      memmove(&np->swappedPGs[i],&curproc->swappedPGs[i],sizeof(struct swappedPG));
+     //memmove(&np->physicalPGs[i],&curproc->physicalPGs[i],sizeof(struct procPG));
+      //memmove(&np->swappedPGs[i],&curproc->swappedPGs[i],sizeof(struct swappedPG));
       np->physicalPGs[i].alloceted = 0;
       //cprintf("moved addr: %x   pid: %x\n",PTE_ADDR(np->physicalPGs[i].va),curproc->pid);
 
       //cprintf("copy swapped %x\n",curproc->swappedPGs[i].va);
-
-
-
-     /* np->physicalPGs[i].next = curproc->physicalPGs[i].next;
-      np->physicalPGs[i].prev =  np->physicalPGs[i].prev ;
-      np->physicalPGs[i].va = np->physicalPGs[i].va;
-      np->physicalPGs[i].age = np->physicalPGs[i].age;
-      np->swappedPGs[i] = curproc->swappedPGs[i];*/
+      np->physicalPGs[i].next = 0;
+      np->physicalPGs[i].prev =  0 ;
+      np->physicalPGs[i].va = curproc->physicalPGs[i].va;
+      np->physicalPGs[i].age = curproc->physicalPGs[i].age;
+      np->physicalPGs[i].alloceted = curproc->physicalPGs[i].alloceted;
+      np->swappedPGs[i] = curproc->swappedPGs[i];
 
      /* if(curproc->physicalPGs[i].va == curproc->headPG->va){
         np->headPG = &np->physicalPGs[i];
@@ -266,6 +264,22 @@ fork(void)
         //cprintf("addr : %d\n",curproc->physicalPGs[i].va);
       }
     }
+    
+    #ifdef SCFIFO
+    for(int i = 0; i < MAX_PSYC_PAGES; i++){
+      if(curproc->physicalPGs[i].va != (char*)0xffffffff){
+        int next = indexInPhysicalMem((uint)curproc->physicalPGs[i].next->va);
+        np->physicalPGs[i].next = &np->physicalPGs[next];
+
+        if(i!=curproc->headPG){
+          int prev = indexInPhysicalMem((uint)curproc->physicalPGs[i].prev->va);
+          np->physicalPGs[i].prev = &np->physicalPGs[prev];
+        }
+        //cprintf("addr : %d\n",curproc->physicalPGs[i].va);
+      }
+    }
+    #endif
+    
     
     char* newPage = kalloc();
     for(i = 0; i < (curproc->nPgsSwap)*PGSIZE ; i++){
@@ -356,13 +370,18 @@ wait(void)
         continue;
       havekids = 1;
       if(p->state == ZOMBIE){
-        /*int i = 0;
-        for(i = 0 ; i < MAX_PSYC_PAGES ; i++){
-          p->physicalPGs[i].va = (char*)0xffffffff;
-          p->physicalPGs[i].alloceted = 0;
-          p->swappedPGs[i].va = (char*)0xffffffff;
-        }*/
+
         // Found one.
+        int i;
+        for(i = 0; i < MAX_PSYC_PAGES; i++){
+              p->swappedPGs[i].va = (char*)0xffffffff;
+              p->swappedPGs[i].changeCounter = 0;
+              p->physicalPGs[i].va = (char*)0xffffffff;
+              p->physicalPGs[i].prev = 0;
+              p->physicalPGs[i].next = 0;
+              p->physicalPGs[i].age = 0;
+              p->physicalPGs[i].alloceted = 0;
+        }
         pid = p->pid;
         kfree(p->kstack);
         p->kstack = 0;

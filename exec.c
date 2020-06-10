@@ -24,23 +24,40 @@ exec(char *path, char **argv)
   // cprintf("EXEC!!\n");
   struct swappedPG swappedPGs[MAX_PSYC_PAGES];
   struct procPG physicalPGs[MAX_PSYC_PAGES];
+  //int buRefs[MAX_PSYC_PAGES];
 
+  
   //memmove(swappedPGs,curproc->swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
   //memmove(physicalPGs,curproc->physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
   for(i = 0 ;i < MAX_PSYC_PAGES ; i++){
+    // if(curproc->physicalPGs[i].va!=EMPTY_VA){
+    //   buRefs[i] = getReferenceCount((uint)curproc->physicalPGs[i].va);
+    // }
     resetRefCounter((uint)curproc->physicalPGs[i].va);
+    physicalPGs[i].next = curproc->physicalPGs[i].next;
+    physicalPGs[i].prev =  curproc->physicalPGs[i].prev ;
+    physicalPGs[i].va = curproc->physicalPGs[i].va;
+    physicalPGs[i].age = curproc->physicalPGs[i].age;
+    physicalPGs[i].alloceted = curproc->physicalPGs[i].alloceted;
+
+    swappedPGs[i] = curproc->swappedPGs[i];
+    swappedPGs[i].offset = curproc->swappedPGs[i].offset;
+
     curproc->physicalPGs[i].va = (char*)0xffffffff;
     curproc->physicalPGs[i].next = 0;
     curproc->physicalPGs[i].prev = 0;
     curproc->physicalPGs[i].age = 0;
     curproc->physicalPGs[i].alloceted = 0;
     curproc->swappedPGs[i].va = (char*)0xffffffff;
+    swappedPGs[i].offset = 0;
   }
-  /*curproc->nPgsPhysical = 0;
-  curproc->allocatedInPhys = 0;*/
 
+  int nPgsPhysical = curproc->nPgsPhysical;
+  curproc->nPgsPhysical = 0;
+  int nPgsSwap =curproc->nPgsSwap ;
   curproc->nPgsSwap = 0;
-  curproc->headPG = 0;
+  int headPG =curproc->headPG;
+  curproc->headPG = -1;
   #endif
 
   begin_op();
@@ -130,8 +147,25 @@ exec(char *path, char **argv)
   return 0;
 
  bad:
-  memmove(curproc->swappedPGs,swappedPGs,sizeof(struct swappedPG)*MAX_PSYC_PAGES);
-  memmove(curproc->physicalPGs,physicalPGs,sizeof(struct procPG)*MAX_PSYC_PAGES);
+
+  for(i = 0; i < MAX_PSYC_PAGES ; i++){
+      // if(physicalPGs[i].va!=EMPTY_VA){
+      //   setReferenceCount((uint)curproc->physicalPGs[i].va,buRefs[i]);
+      // }
+      curproc->physicalPGs[i].next = physicalPGs[i].next;
+      curproc->physicalPGs[i].prev =  physicalPGs[i].prev;
+      curproc->physicalPGs[i].va = physicalPGs[i].va;
+      curproc->physicalPGs[i].age = physicalPGs[i].age;
+      curproc->physicalPGs[i].alloceted = physicalPGs[i].alloceted;
+
+      curproc->swappedPGs[i] = swappedPGs[i];
+      curproc->swappedPGs[i].offset = swappedPGs[i].offset;
+
+  }
+  curproc->nPgsSwap =nPgsSwap ;
+  curproc->headPG =headPG;
+  curproc->nPgsPhysical = nPgsPhysical;
+
   if(pgdir)
     freevm(pgdir);
   if(ip){

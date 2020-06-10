@@ -1,4 +1,4 @@
-#include "param.h"
+/*#include "param.h"
 #include "types.h"
 #include "defs.h"
 #include "x86.h"
@@ -99,3 +99,4 @@ void freePageFromList(struct procPG *pg){
   return;
 }
 
+*/

@@ -155,6 +155,17 @@ void incrementReferenceCount(uint pa)
   release(&kmem.lock);
 }
 
+void setReferenceCount(uint pa,int n)
+{
+
+  if( pa >= PHYSTOP)
+    panic("setReferenceCount");
+
+  acquire(&kmem.lock);
+  kmem.pg_refcount[index(pa)]= n;
+  release(&kmem.lock);
+}
+
 uint getReferenceCount(uint pa)
 {
   // if(pa > PHYSTOP/PGSIZE){
@@ -162,7 +173,7 @@ uint getReferenceCount(uint pa)
   //   panic("1");
   // }
 
-  if(pa < (uint)V2P(end) || pa >= PHYSTOP)
+  if( pa >= PHYSTOP)
     panic("getReferenceCount");
   uint count;
 

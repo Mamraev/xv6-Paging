@@ -86,6 +86,8 @@ cowSwapFile_pageSeperationTest(){
     }
     //printf(1,"sleeping\n");
     //sleep(500000);
+
+    
     exit();
   }
   //sleep(500000);
@@ -135,22 +137,19 @@ cowSwapFile_maxPhyInChildTest(){
       //printf(1,"%d ",i);
       *lst[i]= i + 50;
     }
-    //printProcDump(0);
     if(freePages != getNumberOfFreePages()+100){
       printf(1," FAILED 3(Free Memory error)%d\n",getNumberOfFreePages());
     //ERROR
     }
     printf(1,"3  free pages: %d\n",getNumberOfFreePages());
-      //sleep(10000);
     exit();
   }
   wait();
-  int j;
   printf(1,"4  free pages: %d\n",getNumberOfFreePages());
-  for(j = 0; j < 20; j++){
+  for(i = 0; i < 20; i++){
       //printf(1,"%d ",j);
-      if(*lst[j]!=j){
-        printf(1,"\nparent fail %d %d\n",*lst[j]!=j);
+      if(*lst[i]!=i){
+        printf(1,"\nparent fail %d %d\n",*lst[i]!=i);
         printf(1," FAILED");
         return -1;
       }
@@ -232,15 +231,16 @@ PhysicalMemTest(){
 
 int
 SwapFileTest(){
-  int pid = getpid();
   printf(1,"SwapFileTest :");
   int* lst[20];
   int i;
   for(i = 0; i < 20; i++){
+    //printf(1,"i: %d\n",i);
     lst[i] = (int*)sbrk(PGSIZE);
     *lst[i]=i;
   }
   sleep(50);
+  //printProcDump(getpid());
   for(i = 0; i < 20; i++){
     if(*lst[i]!=i){
       printf(1," FAILED %d %d",*lst[i],i);
