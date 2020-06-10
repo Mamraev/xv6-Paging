@@ -47,6 +47,9 @@ exec(char *path, char **argv)
     curproc->physicalPGs[i].next = 0;
     curproc->physicalPGs[i].prev = 0;
     curproc->physicalPGs[i].age = 0;
+    #ifdef LAPA
+        p->physicalPGs[i].age = 0xffffffff;
+    #endif
     curproc->physicalPGs[i].alloceted = 0;
     curproc->swappedPGs[i].va = (char*)0xffffffff;
     swappedPGs[i].offset = 0;
@@ -147,7 +150,7 @@ exec(char *path, char **argv)
   return 0;
 
  bad:
-
+  #ifndef NONE
   for(i = 0; i < MAX_PSYC_PAGES ; i++){
       // if(physicalPGs[i].va!=EMPTY_VA){
       //   setReferenceCount((uint)curproc->physicalPGs[i].va,buRefs[i]);
@@ -165,6 +168,7 @@ exec(char *path, char **argv)
   curproc->nPgsSwap =nPgsSwap ;
   curproc->headPG =headPG;
   curproc->nPgsPhysical = nPgsPhysical;
+  #endif
 
   if(pgdir)
     freevm(pgdir);

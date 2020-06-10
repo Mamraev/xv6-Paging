@@ -127,6 +127,9 @@ found:
     p->physicalPGs[i].prev = 0;
     p->physicalPGs[i].next = 0;
     p->physicalPGs[i].age = 0;
+    #ifdef LAPA
+        p->physicalPGs[i].age = 0xffffffff;
+    #endif
     p->physicalPGs[i].alloceted = 0;
   }
   p->nTotalPGout = 0;
@@ -380,6 +383,9 @@ wait(void)
               p->physicalPGs[i].prev = 0;
               p->physicalPGs[i].next = 0;
               p->physicalPGs[i].age = 0;
+              #ifdef LAPA
+                p->physicalPGs[i].age = 0xffffffff;
+              #endif
               p->physicalPGs[i].alloceted = 0;
         }
         pid = p->pid;
@@ -633,7 +639,7 @@ procdump(void)
 
 //update aging mechanisem of nfua algo each tick form trap.c
 void
-nfuaTickUpdate(){
+ageTickUpdate(){
   struct proc *p;
   pte_t *pte,*pde,*pgtab;
 
@@ -663,8 +669,6 @@ nfuaTickUpdate(){
       }
 
       p->physicalPGs[i].age = ((p->physicalPGs[i].age) >> 1); // shift right
-      //cprintf("shifted: %x\n",p->physicalPGs[i].age);
-
       if(*pte & PTE_A){                                       // set MSB if accessed
         uint newBit = 1 << ((sizeof(uint)*8) - 1);
         p->physicalPGs[i].age |= newBit;

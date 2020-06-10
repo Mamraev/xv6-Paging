@@ -18,6 +18,9 @@ print_mod(){
   #ifdef NFUA
     printf(1,"NFUA");
   #endif
+  #ifdef LAPA
+    printf(1,"LAPA");
+  #endif
   printf(1,"\n");
 }
 

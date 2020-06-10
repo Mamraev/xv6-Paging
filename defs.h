@@ -136,7 +136,7 @@ void            userinit(void);
 int             wait(void);
 void            wakeup(void*);
 void            yield(void);
-void            nfuaTickUpdate(void);
+void            ageTickUpdate(void);
 void            singleProcDump(int);
 
 // swtch.S
@@ -203,7 +203,7 @@ void            switchuvm(struct proc*);
 void            switchkvm(void);
 int             copyout(pde_t*, uint, void*, uint);
 void            clearpteu(pde_t *pgdir, char *uva);
-struct procPG*  writePageToSwapFile(char*);
+void            writePageToSwapFile(void);
 int             initPhysicalPage(char*);
 int             scfifoLastPageIndex(void);
 void            swapPage(uint);

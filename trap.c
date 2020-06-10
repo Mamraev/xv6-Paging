@@ -8,6 +8,7 @@
 #include "traps.h"
 #include "spinlock.h"
 
+#ifdef NONE
 static pte_t *
 walkpgdir(pde_t *pgdir, const void *va, int alloc)
 {
@@ -30,6 +31,7 @@ walkpgdir(pde_t *pgdir, const void *va, int alloc)
   }
   return &pgtab[PTX(va)];
 }
+#endif
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -77,7 +79,10 @@ trap(struct trapframe *tf)
     if(cpuid() == 0){
       acquire(&tickslock);
       /*#ifdef NFUA
-        nfuaTickUpdate();
+        ageTickUpdate();
+      #endif
+      #ifdef LAPA
+        ageTickUpdate();
       #endif*/
       ticks++;
       wakeup(&ticks);
@@ -111,8 +116,11 @@ trap(struct trapframe *tf)
     #ifndef NONE
     // TODO: Chek for illigal addr
     
-      #ifdef NFUA  //there is commented version in tick trap
-        nfuaTickUpdate();
+      #ifdef NFUA
+        ageTickUpdate();
+      #endif
+      #ifdef LAPA
+        ageTickUpdate();
       #endif
       
       /*if(myproc()->pid<=2){
@@ -146,24 +154,25 @@ trap(struct trapframe *tf)
         lcr3(V2P(myproc()->pgdir));
       }
       else if((*pte & PTE_W) == 0) {
-        //cprintf("trap: %x\n",addr);
+        int k = 0;
+        for(k = 0 ; k <  MAX_PSYC_PAGES; k++){
+          
+          if(myproc()->physicalPGs[k].va == (char*)PGROUNDDOWN(addr)){
+            myproc()->physicalPGs[k].alloceted = 1;
+            myproc()->physicalPGs[k].age = 0;
+            #ifdef LAPA
+              myproc()->physicalPGs[k].age = 0xffffffff;
+            #endif
+            break;
+          }
+        }
         if((*pte & PTE_COW) != 0){
           //cprintf("write %x\n",PGROUNDDOWN(addr));
           uint refCount = getReferenceCount(pa);
           char *mem;
           if(refCount > 1) {
 
-          int k = 0;
-          for(k = 0 ; k <  MAX_PSYC_PAGES; k++){
-            
-            if(myproc()->physicalPGs[k].va == (char*)PGROUNDDOWN(addr)){
-              myproc()->physicalPGs[k].alloceted = 1;
-              myproc()->physicalPGs[k].age = 0;
-              break;
-            }else{
-              //cprintf("%d page was %x, we want %x\n",myproc()->allocatedInPhys,myproc()->physicalPGs[k].va,addr);
-            }
-          }
+          
             
             if((mem = kalloc()) == 0) {
               cprintf("Page fault out of memory, kill proc %s with pid %d\n", myproc()->name, myproc()->pid);

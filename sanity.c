@@ -109,7 +109,7 @@ int
 cowSwapFile_maxPhyInChildTest(){
   //printProcDump(0);
   int freePages = getNumberOfFreePages();
-  printf(1,"1  free pages: %d\n",freePages);
+  //printf(1,"1  free pages: %d\n",freePages);
   printf(1,"cowSwapFile_maxPhyInChildTest :");
   int* lst[20];
   int i;
@@ -119,17 +119,19 @@ cowSwapFile_maxPhyInChildTest(){
   }
 
   //printProcDump(0);
-  if(freePages != getNumberOfFreePages()+16){
+  int freePagesAfterSBRK = getNumberOfFreePages();
+  if(freePages > getNumberOfFreePages()+16){
     printf(1," FAILED 1(Free Memory error) %d\n",getNumberOfFreePages());
-    //ERROR
+    exit();
   }
   int pid = fork();
   if(pid==0){
 
-    printf(1,"2  free pages: %d\n",getNumberOfFreePages());
-    if(freePages != getNumberOfFreePages()+84){
-    printf(1," FAILED 2(Free Memory error)\n");
-    //ERROR 
+    //printf(1,"2  free pages: %d\n",getNumberOfFreePages());
+    int freePagesAfterFork = getNumberOfFreePages();
+    if(freePagesAfterFork  + 68 != freePagesAfterSBRK){
+    printf(1," FAILED 2(Free Memory error) %d %d\n",freePagesAfterFork,freePagesAfterSBRK);
+    exit();
     }
 
     for(i = 0; i < 20; i++){
@@ -137,15 +139,15 @@ cowSwapFile_maxPhyInChildTest(){
       //printf(1,"%d ",i);
       *lst[i]= i + 50;
     }
-    if(freePages != getNumberOfFreePages()+100){
+    if(freePagesAfterFork > getNumberOfFreePages()+16){
       printf(1," FAILED 3(Free Memory error)%d\n",getNumberOfFreePages());
     //ERROR
     }
-    printf(1,"3  free pages: %d\n",getNumberOfFreePages());
+    //printf(1,"3  free pages: %d\n",getNumberOfFreePages());
     exit();
   }
   wait();
-  printf(1,"4  free pages: %d\n",getNumberOfFreePages());
+  //printf(1,"4  free pages: %d\n",getNumberOfFreePages());
   for(i = 0; i < 20; i++){
       //printf(1,"%d ",j);
       if(*lst[i]!=i){
@@ -154,9 +156,9 @@ cowSwapFile_maxPhyInChildTest(){
         return -1;
       }
     }
-    printf(1,"5  free pages: %d\n",getNumberOfFreePages());
+    //printf(1,"5  free pages: %d\n",getNumberOfFreePages());
 
-    if(freePages != getNumberOfFreePages()+16){
+    if(freePages >getNumberOfFreePages()+16){
       printf(1," FAILED 4(Free Memory error)\n");
     }
   return 0;
@@ -285,7 +287,6 @@ main(int argc, char *argv[]){
 //makeTest(cowSwapFile_maxPhyInChildTest);
 //makeTest(cowPhysicalTest);
 //makeTest(SwapFileTest);
-
   int freeMem = getNumberOfFreePages();
   
   //  Cow Tests:
